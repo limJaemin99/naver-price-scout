@@ -1,0 +1,379 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>네이버 쇼핑 최저가 일괄 조회 도구</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%2303c75a'/%3E%3Ctext x='16' y='23' font-size='20' text-anchor='middle' fill='white' font-family='sans-serif' font-weight='bold'%3E₩%3C/text%3E%3C/svg%3E" />
+<style>
+  :root{
+    --bg:#f4f6f9; --card:#ffffff; --ink:#1a1d21; --sub:#6b7280;
+    --line:#e5e7eb; --brand:#03c75a; --brand-ink:#02a94d;
+    --accent:#2563eb; --danger:#dc2626; --danger-bg:#fef2f2;
+    --warn:#b45309; --warn-bg:#fffbeb; --ok:#15803d; --ok-bg:#f0fdf4;
+    --price:#e8590c;
+    --shadow:0 1px 3px rgba(0,0,0,.06), 0 1px 2px rgba(0,0,0,.04);
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --bg:#0f1115; --card:#191c22; --ink:#e8eaed; --sub:#9aa0a6;
+      --line:#2a2e37; --danger-bg:#2a1618; --warn-bg:#2a2213; --ok-bg:#14231a;
+      --shadow:0 1px 3px rgba(0,0,0,.4);
+    }
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; background:var(--bg); color:var(--ink);
+    font-family:"Malgun Gothic","맑은 고딕",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+    line-height:1.5; padding:24px 16px 60px;
+  }
+  .wrap{max-width:980px; margin:0 auto}
+  header h1{font-size:22px; margin:0 0 4px; display:flex; align-items:center; gap:8px}
+  header .dot{width:14px;height:14px;border-radius:4px;background:var(--brand);display:inline-block}
+  header p{margin:0 0 18px; color:var(--sub); font-size:14px}
+
+  /* ── 배너 ── */
+  .banner{padding:12px 14px; border-radius:10px; font-size:13.5px; margin-bottom:16px; display:none}
+  .banner.show{display:block}
+  .banner.warn{background:var(--warn-bg); color:var(--warn); border:1px solid color-mix(in srgb,var(--warn) 30%, transparent)}
+
+  /* ── 스텝퍼 ── */
+  .stepper{display:flex; gap:4px; margin-bottom:20px; overflow-x:auto; padding-bottom:4px}
+  .step{
+    display:flex; align-items:center; gap:8px; padding:8px 12px; border-radius:10px;
+    font-size:13px; color:var(--sub); white-space:nowrap; border:1px solid transparent; cursor:default;
+  }
+  .step .num{
+    width:22px; height:22px; border-radius:50%; background:var(--line); color:var(--sub);
+    display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:700; flex:0 0 auto;
+  }
+  .step.active{background:var(--card); border-color:var(--line); color:var(--ink); box-shadow:var(--shadow)}
+  .step.active .num{background:var(--brand); color:#fff}
+  .step.done{color:var(--ok); cursor:pointer}
+  .step.done .num{background:var(--ok); color:#fff}
+  .step.clickable{cursor:pointer}
+
+  /* ── 패널 ── */
+  .panel{
+    background:var(--card); border:1px solid var(--line); border-radius:14px;
+    padding:20px; box-shadow:var(--shadow); margin-bottom:18px;
+  }
+  .panel h2{font-size:17px; margin:0 0 4px}
+  .panel .desc{color:var(--sub); font-size:13.5px; margin:0 0 18px}
+  .step-page{display:none}
+  .step-page.active{display:block}
+
+  .grid{display:grid; gap:14px}
+  .row2{grid-template-columns:1fr 1fr}
+  @media (max-width:640px){ .row2{grid-template-columns:1fr} }
+
+  label{display:block; font-size:12.5px; font-weight:600; color:var(--sub); margin-bottom:6px}
+  input[type=text],input[type=password],select{
+    width:100%; padding:10px 12px; border:1px solid var(--line); border-radius:9px;
+    background:var(--bg); color:var(--ink); font-size:14px; font-family:inherit;
+  }
+  input:focus,select:focus{outline:2px solid color-mix(in srgb,var(--accent) 45%, transparent); outline-offset:1px; border-color:var(--accent)}
+
+  .actions{display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-top:18px}
+  button{border:0; border-radius:9px; padding:11px 20px; font-size:14px; font-weight:700; cursor:pointer; font-family:inherit}
+  .btn-primary{background:var(--brand); color:#fff}
+  .btn-primary:hover{background:var(--brand-ink)}
+  .btn-primary:disabled{opacity:.5; cursor:not-allowed}
+  .btn-ghost{background:transparent; color:var(--sub); border:1px solid var(--line)}
+  .btn-ghost:hover{background:var(--bg)}
+  .hint{font-size:12px;color:var(--sub)}
+  .spacer{flex:1}
+
+  /* ── 상태 메시지 ── */
+  .status{margin-top:16px; padding:14px 16px; border-radius:10px; font-size:13.5px; white-space:pre-wrap; display:none}
+  .status.show{display:block}
+  .status.ok{background:var(--ok-bg); color:var(--ok); border:1px solid color-mix(in srgb,var(--ok) 30%, transparent)}
+  .status.error{background:var(--danger-bg); color:var(--danger); border:1px solid color-mix(in srgb,var(--danger) 30%, transparent)}
+  .status.info{background:var(--bg); color:var(--sub); border:1px solid var(--line)}
+  .spinner{width:18px;height:18px;border:3px solid var(--line);border-top-color:var(--brand);border-radius:50%;display:inline-block;animation:spin .8s linear infinite;vertical-align:middle;margin-right:8px}
+  @keyframes spin{to{transform:rotate(360deg)}}
+
+  .placeholder{padding:36px 20px; text-align:center; color:var(--sub); font-size:14px; border:1px dashed var(--line); border-radius:12px}
+  .placeholder .big{font-size:15px; font-weight:700; color:var(--ink); margin-bottom:6px}
+  code{background:var(--bg); border:1px solid var(--line); border-radius:5px; padding:1px 5px; font-size:12.5px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1><span class="dot"></span>네이버 쇼핑 최저가 일괄 조회 도구</h1>
+    <p>품목 리스트 엑셀을 올리면 각 상품의 최저가를 자동 조회하고 <b>확정 / 확인필요 / 검색결과없음</b>으로 분류합니다.</p>
+  </header>
+
+  <div id="fileWarn" class="banner warn">
+    ⚠️ 이 페이지를 파일로 직접 열었습니다(<code>file://</code>). 네이버 API는 브라우저 직접 호출을 CORS로 막습니다.
+    프로젝트 폴더에서 <code>node server.js</code> 실행 후 <b>http://localhost:3000</b> 으로 접속하세요.
+  </div>
+
+  <!-- ── 스텝퍼 ── -->
+  <nav class="stepper" id="stepper"></nav>
+
+  <!-- ── STEP 1: 키 설정 ── -->
+  <section class="step-page active" data-step="1">
+    <div class="panel">
+      <h2>1. 네이버 검색 API 키 설정</h2>
+      <p class="desc">발급받은 Client ID / Secret 을 입력하고 <b>연결 테스트</b>로 정상 작동을 확인하세요.
+        키는 이 브라우저(localStorage)에만 저장되며 서버로 저장·전송되지 않습니다.</p>
+      <div class="grid row2">
+        <div>
+          <label for="cid">Client ID</label>
+          <input id="cid" type="text" placeholder="발급받은 X-Naver-Client-Id" autocomplete="off" spellcheck="false" />
+        </div>
+        <div>
+          <label for="csec">Client Secret</label>
+          <input id="csec" type="password" placeholder="발급받은 X-Naver-Client-Secret" autocomplete="off" spellcheck="false" />
+        </div>
+      </div>
+      <div class="actions">
+        <button id="btnTest" class="btn-primary">🔌 연결 테스트</button>
+        <label style="display:flex;align-items:center;gap:6px;margin:0;font-weight:500;color:var(--sub);font-size:13px">
+          <input type="checkbox" id="remember" checked /> 이 브라우저에 키 저장
+        </label>
+        <div class="spacer"></div>
+        <button id="next1" class="btn-primary" disabled>다음 단계 →</button>
+      </div>
+      <div id="testStatus" class="status"></div>
+    </div>
+  </section>
+
+  <!-- ── STEP 2~6: 자리표시자 (이후 Phase 구현) ── -->
+  <section class="step-page" data-step="2">
+    <div class="panel">
+      <h2>2. 품목 리스트 업로드</h2>
+      <p class="desc">엑셀 업로드 · 시트/헤더 자동 감지 · 브랜드 필터</p>
+      <div class="placeholder"><div class="big">🚧 Phase 2에서 구현됩니다</div>엑셀 파싱, 브랜드 체크박스, 검색어 생성 규칙</div>
+      <div class="actions"><button class="btn-ghost" data-goto="1">← 이전</button></div>
+    </div>
+  </section>
+  <section class="step-page" data-step="3">
+    <div class="panel">
+      <h2>3. 검색어 미리보기</h2>
+      <div class="placeholder"><div class="big">🚧 Phase 2에서 구현됩니다</div>[품명 → 검색어] 표, 인라인 수정, 예상 호출 수</div>
+      <div class="actions"><button class="btn-ghost" data-goto="2">← 이전</button></div>
+    </div>
+  </section>
+  <section class="step-page" data-step="4">
+    <div class="panel">
+      <h2>4. 실행</h2>
+      <div class="placeholder"><div class="big">🚧 Phase 3에서 구현됩니다</div>진행률·실시간 로그·일시정지/재개·중간 저장</div>
+      <div class="actions"><button class="btn-ghost" data-goto="3">← 이전</button></div>
+    </div>
+  </section>
+  <section class="step-page" data-step="5">
+    <div class="panel">
+      <h2>5. 결과 확인</h2>
+      <div class="placeholder"><div class="big">🚧 Phase 4에서 구현됩니다</div>판정별 필터 탭, 확인필요 사유·링크</div>
+      <div class="actions"><button class="btn-ghost" data-goto="4">← 이전</button></div>
+    </div>
+  </section>
+  <section class="step-page" data-step="6">
+    <div class="panel">
+      <h2>6. 다운로드</h2>
+      <div class="placeholder"><div class="big">🚧 Phase 5에서 구현됩니다</div>결과_원본형.xlsx · 결과_보고서형.xlsx</div>
+      <div class="actions"><button class="btn-ghost" data-goto="5">← 이전</button></div>
+    </div>
+  </section>
+</div>
+
+<script>
+/* ══════════════════════════════════════════════════════════════════
+ *  CONFIG — 모든 임계값·키워드·정규식을 이 블록에서 관리 (튜닝 지점)
+ *  각 값의 의미는 주석 참조. 판정 로직은 Phase 3~4에서 이 상수들을 사용.
+ * ════════════════════════════════════════════════════════════════ */
+const CONFIG = {
+  // ── API 호출 ──────────────────────────────────────────────
+  DISPLAY: 40,                       // 검색당 수신 건수(정확도순 40건 받아 필터링)
+  SORT: 'sim',                       // 정확도순. asc(최저가순)는 미끼상품이 몰려 금지
+  CALL_DELAY_MS: 150,                // 호출 간 기본 딜레이(ms)
+  RETRY_BACKOFF_MS: [1000, 2000, 4000], // HTTP 429 시 지수 백오프(3회)
+  DAILY_LIMIT: 25000,                // 일일 호출 한도(표시용)
+
+  // ── 검색어 생성: 제거할 "내부 관리코드" 괄호 키워드 ──────────
+  //  원칙: 채널/시즌/관리 코드는 제거, 콜라보·에디션명은 유지
+  STRIP_PAREN_KEYWORDS: ['미주전용','홈쇼핑전용','홈쇼핑','일본수출용','수출용','국내디지털','위생허가','OY','AD'],
+
+  // ── 판정: 세트성 키워드(양방향 검사 — 단순 제외 아님) ────────
+  //  원본 품명 집합 S, 결과 제목 집합 R:  R−S≠∅ 또는 S−R≠∅ 이면 후보 탈락
+  SET_KEYWORDS: ['세트','기획','증정','묶음','키링','1+1','2개','3개','+','리필','미니','대용량','더블'],
+
+  // ── 판정: 토큰 매칭 임계값 ──────────────────────────────────
+  TOKEN_MATCH_FULL: 0.80,            // 0.80↑ : 후보 유지
+  TOKEN_MATCH_PARTIAL: 0.50,         // 0.50~0.80 : 유지+"부분일치" 마킹 / 0.50미만 : 탈락
+
+  // ── 판정: 가격 이상치 ──────────────────────────────────────
+  PRICE_MEDIAN_FLOOR: 0.5,           // 최저후보 < 중앙값×0.5 → "가격 이상" 마킹
+  PRICE_VS_RETAIL: 0.15,             // 최저후보 < 소비자가×0.15 → "소비자가 대비 과도하게 낮음" 마킹
+
+  // ── 판정: 용량/수량 추출 정규식 ─────────────────────────────
+  QTY_UNITS: ['ml','mL','g','정','캡슐','포','매','일분','개입','개월','号','호','ea','EA'],
+
+  // ── 보고서: 카테고리 자동분류(우선순위 순 — 구체 → 일반) ─────
+  //  첫 매칭 채택. '립'보다 '브로우'를 먼저 검사해 오분류 방지.
+  CATEGORY_RULES: [
+    ['아이브로우', ['브로우']],
+    ['하이라이터', ['하이라이터']],
+    ['팩트',      ['쿠션','팩트','파운데이션','파우더','컨실러','픽서']],
+    ['아이',      ['팔레트','라이너','마스카라','섀도우','아이래쉬','글리터']],
+    ['치크',      ['블러쉬','치크']],
+    ['립',        ['틴트','립','루즈','글로스','밤크레용']],
+  ],
+  DEFAULT_CATEGORY: '기타',
+};
+
+/* ══════════════════════════════════════════════════════════════════
+ *  앱 상태 & 유틸
+ * ════════════════════════════════════════════════════════════════ */
+const $ = (id) => document.getElementById(id);
+const isFile = location.protocol === 'file:';
+
+const STEPS = [
+  { n: 1, label: '키 설정' },
+  { n: 2, label: '파일 업로드' },
+  { n: 3, label: '검색어' },
+  { n: 4, label: '실행' },
+  { n: 5, label: '결과' },
+  { n: 6, label: '다운로드' },
+];
+
+const state = {
+  current: 1,
+  maxUnlocked: 1,   // 여기까지 이동 가능(연결 테스트 통과 시 2로 확장)
+};
+
+const LS = {
+  cid: 'naver_cid',
+  csec: 'naver_csec',
+};
+
+/* ── 스텝퍼 렌더 ── */
+function renderStepper() {
+  const el = $('stepper');
+  el.innerHTML = '';
+  STEPS.forEach(({ n, label }) => {
+    const div = document.createElement('div');
+    const done = n < state.current && n <= state.maxUnlocked;
+    const active = n === state.current;
+    const clickable = n <= state.maxUnlocked;
+    div.className = 'step' + (active ? ' active' : '') + (done ? ' done' : '') + (clickable && !active ? ' clickable' : '');
+    div.innerHTML = `<span class="num">${done ? '✓' : n}</span><span>${label}</span>`;
+    if (clickable) div.addEventListener('click', () => goStep(n));
+    el.appendChild(div);
+  });
+}
+
+function goStep(n) {
+  if (n > state.maxUnlocked) return;
+  state.current = n;
+  document.querySelectorAll('.step-page').forEach((p) => {
+    p.classList.toggle('active', Number(p.dataset.step) === n);
+  });
+  renderStepper();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function unlock(upTo) {
+  state.maxUnlocked = Math.max(state.maxUnlocked, upTo);
+  renderStepper();
+}
+
+/* ── 상태 배너 ── */
+function setStatus(el, html, cls) {
+  el.className = 'status show ' + (cls || 'info');
+  el.innerHTML = html;
+}
+function clearStatus(el) { el.className = 'status'; el.innerHTML = ''; }
+
+/* ══════════════════════════════════════════════════════════════════
+ *  STEP 1 — 키 설정 & 연결 테스트
+ * ════════════════════════════════════════════════════════════════ */
+function loadKeys() {
+  try {
+    if (localStorage.getItem(LS.cid)) $('cid').value = localStorage.getItem(LS.cid);
+    if (localStorage.getItem(LS.csec)) $('csec').value = localStorage.getItem(LS.csec);
+  } catch (e) {}
+}
+function saveKeys(cid, csec) {
+  try {
+    if ($('remember').checked) {
+      localStorage.setItem(LS.cid, cid);
+      localStorage.setItem(LS.csec, csec);
+    } else {
+      localStorage.removeItem(LS.cid);
+      localStorage.removeItem(LS.csec);
+    }
+  } catch (e) {}
+}
+
+async function testConnection() {
+  const cid = $('cid').value.trim();
+  const csec = $('csec').value.trim();
+  const st = $('testStatus');
+
+  if (!cid || !csec) { setStatus(st, 'Client ID 와 Client Secret 을 먼저 입력하세요.', 'error'); return; }
+  saveKeys(cid, csec);
+
+  $('btnTest').disabled = true;
+  setStatus(st, '<span class="spinner"></span>네이버 API에 연결 중…', 'info');
+
+  const params = new URLSearchParams({ query: '비타민', display: '1', start: '1', sort: 'sim' });
+  try {
+    const r = await fetch('/api/search?' + params.toString(), {
+      headers: { 'X-Naver-Client-Id': cid, 'X-Naver-Client-Secret': csec },
+    });
+    const text = await r.text();
+    let data;
+    try { data = JSON.parse(text); }
+    catch (e) { setStatus(st, '응답을 해석할 수 없습니다 (HTTP ' + r.status + ').\n' + text.slice(0, 300), 'error'); $('btnTest').disabled = false; return; }
+
+    if (!r.ok || data.errorCode || data.errorMessage) {
+      setStatus(st,
+        '❌ 연결 실패 (HTTP ' + r.status + ')\n' +
+        'code: ' + (data.errorCode || '-') + '\n' +
+        'message: ' + (data.errorMessage || text) + '\n\n' +
+        '· 401 / 024 : Client ID·Secret 이 틀렸거나, 애플리케이션에 "검색" API 가 미등록\n' +
+        '· 429 : 일일 호출 한도(25,000건) 초과', 'error');
+      $('btnTest').disabled = false;
+      return;
+    }
+
+    // 성공
+    setStatus(st, '✅ 연결 성공! 네이버 검색 API가 정상 작동합니다. (전체 ' +
+      (data.total || 0).toLocaleString('ko-KR') + '건 응답)  이제 다음 단계로 진행하세요.', 'ok');
+    $('btnTest').disabled = false;
+    $('next1').disabled = false;
+    unlock(2);
+  } catch (err) {
+    $('btnTest').disabled = false;
+    if (isFile) {
+      setStatus(st, '❌ 프록시 서버에 연결하지 못했습니다.\n\n파일을 직접 열면(file://) CORS로 호출이 되지 않습니다.\n프로젝트 폴더에서 "node server.js" 실행 후 http://localhost:3000 으로 접속하세요.', 'error');
+    } else {
+      setStatus(st, '❌ 요청 실패: ' + err.message + '\n\n로컬이면 server.js(프록시)가 실행 중인지 확인하세요.', 'error');
+    }
+  }
+}
+
+/* ══════════════════════════════════════════════════════════════════
+ *  초기화
+ * ════════════════════════════════════════════════════════════════ */
+(function init() {
+  if (isFile) $('fileWarn').classList.add('show');
+  loadKeys();
+  renderStepper();
+
+  $('btnTest').addEventListener('click', testConnection);
+  $('next1').addEventListener('click', () => goStep(2));
+  ['cid', 'csec'].forEach((id) => {
+    $(id).addEventListener('keydown', (e) => { if (e.key === 'Enter') testConnection(); });
+  });
+  document.querySelectorAll('[data-goto]').forEach((b) => {
+    b.addEventListener('click', () => goStep(Number(b.dataset.goto)));
+  });
+})();
+</script>
+</body>
+</html>

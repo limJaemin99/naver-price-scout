@@ -1,0 +1,16 @@
+# 저장소 내부는 LF로 정규화, 체크아웃은 OS 기본에 맡김
+* text=auto
+
+# 웹/스크립트 소스는 항상 LF로 저장
+*.html   text eol=lf
+*.js      text eol=lf
+*.json    text eol=lf
+*.md      text eol=lf
+*.css     text eol=lf
+
+# 바이너리 취급
+*.xlsx    binary
+*.xls     binary
+*.png     binary
+*.jpg     binary
+*.ico     binary
