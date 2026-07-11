@@ -1,0 +1,23 @@
+{
+  "name": "naver-price-scout",
+  "version": "0.1.0",
+  "private": true,
+  "description": "네이버 쇼핑 검색 API로 품목 리스트의 최저가를 일괄 조회·자동 분류하는 단일 HTML 웹앱 + Cloudflare Pages Functions 프록시",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [
+    "naver",
+    "shopping",
+    "price",
+    "cloudflare-pages",
+    "excel"
+  ],
+  "author": "limJaemin99",
+  "license": "MIT"
+}
