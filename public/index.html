@@ -81,6 +81,7 @@
   .btn-primary:disabled{opacity:.5; cursor:not-allowed}
   .btn-ghost{background:transparent; color:var(--sub); border:1px solid var(--line)}
   .btn-ghost:hover{background:var(--bg)}
+  .btn-sm{padding:6px 12px; font-size:12.5px}
   .hint{font-size:12px;color:var(--sub)}
   .spacer{flex:1}
 
@@ -96,6 +97,59 @@
   .placeholder{padding:36px 20px; text-align:center; color:var(--sub); font-size:14px; border:1px dashed var(--line); border-radius:12px}
   .placeholder .big{font-size:15px; font-weight:700; color:var(--ink); margin-bottom:6px}
   code{background:var(--bg); border:1px solid var(--line); border-radius:5px; padding:1px 5px; font-size:12.5px}
+
+  /* ── 드롭존 ── */
+  .dropzone{
+    border:2px dashed var(--line); border-radius:14px; padding:34px 20px; text-align:center;
+    color:var(--sub); cursor:pointer; transition:.15s; background:var(--bg);
+  }
+  .dropzone:hover,.dropzone.drag{border-color:var(--brand); background:color-mix(in srgb,var(--brand) 7%, var(--bg)); color:var(--ink)}
+  .dropzone .ico{font-size:32px; margin-bottom:6px}
+  .dropzone b{color:var(--brand-ink)}
+
+  /* ── 감지 결과 그리드 ── */
+  .detect{margin-top:18px; display:none}
+  .detect.show{display:block}
+  .map-grid{display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:10px}
+  .map-grid .cell label{margin-bottom:4px}
+  .map-grid select{padding:7px 9px; font-size:13px}
+
+  /* ── 브랜드 체크박스 ── */
+  .brand-list{display:flex; flex-wrap:wrap; gap:8px; margin-top:6px}
+  .brand-chip{
+    display:flex; align-items:center; gap:7px; padding:8px 12px; border:1px solid var(--line);
+    border-radius:10px; background:var(--bg); font-size:13.5px; cursor:pointer; user-select:none;
+  }
+  .brand-chip input{width:auto; margin:0}
+  .brand-chip.on{border-color:var(--brand); background:color-mix(in srgb,var(--brand) 10%, var(--bg))}
+  .brand-chip .cnt{color:var(--sub); font-size:12px}
+
+  /* ── 요약 배지 ── */
+  .summary{
+    margin-top:16px; padding:14px 16px; border-radius:12px; background:var(--ok-bg);
+    border:1px solid color-mix(in srgb,var(--ok) 25%, transparent); font-size:14px; display:none;
+  }
+  .summary.show{display:block}
+  .summary b{font-size:20px; color:var(--ok)}
+  .summary .warn{color:var(--warn)}
+
+  /* ── 미리보기 표 ── */
+  .toolbar{display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-bottom:12px}
+  .toolbar input[type=text]{max-width:280px}
+  .tablewrap{max-height:560px; overflow:auto; border:1px solid var(--line); border-radius:12px}
+  table.preview{width:100%; border-collapse:collapse; font-size:13px}
+  table.preview th,table.preview td{padding:8px 10px; border-bottom:1px solid var(--line); text-align:left; vertical-align:top}
+  table.preview thead th{position:sticky; top:0; background:var(--card); z-index:1; font-size:12px; color:var(--sub); white-space:nowrap}
+  table.preview td.idx{color:var(--sub); text-align:right; width:44px; font-variant-numeric:tabular-nums}
+  table.preview td.name{width:42%; color:var(--sub)}
+  table.preview .qinput{width:100%; padding:6px 8px; font-size:13px; border:1px solid transparent; background:transparent; border-radius:7px; color:var(--ink)}
+  table.preview .qinput:hover{border-color:var(--line)}
+  table.preview .qinput:focus{border-color:var(--accent); background:var(--bg); outline:none}
+  table.preview tr.edited td.name::after{content:'수정됨'; display:inline-block; margin-left:6px; font-size:10px; color:var(--warn); background:var(--warn-bg); border-radius:4px; padding:0 5px; font-weight:700; vertical-align:middle}
+  .reset-cell{width:36px; text-align:center}
+  .reset-btn{background:transparent; border:0; color:var(--sub); cursor:pointer; font-size:14px; padding:2px 4px; display:none}
+  tr.edited .reset-btn{display:inline}
+  .brand-tag{display:inline-block; font-size:11px; color:var(--sub); background:var(--bg); border:1px solid var(--line); border-radius:5px; padding:0 5px; margin-right:6px}
 </style>
 </head>
 <body>
@@ -113,7 +167,7 @@
   <!-- ── 스텝퍼 ── -->
   <nav class="stepper" id="stepper"></nav>
 
-  <!-- ── STEP 1: 키 설정 ── -->
+  <!-- ══ STEP 1: 키 설정 ══ -->
   <section class="step-page active" data-step="1">
     <div class="panel">
       <h2>1. 네이버 검색 API 키 설정</h2>
@@ -141,22 +195,86 @@
     </div>
   </section>
 
-  <!-- ── STEP 2~6: 자리표시자 (이후 Phase 구현) ── -->
+  <!-- ══ STEP 2: 파일 업로드 ══ -->
   <section class="step-page" data-step="2">
     <div class="panel">
       <h2>2. 품목 리스트 업로드</h2>
-      <p class="desc">엑셀 업로드 · 시트/헤더 자동 감지 · 브랜드 필터</p>
-      <div class="placeholder"><div class="big">🚧 Phase 2에서 구현됩니다</div>엑셀 파싱, 브랜드 체크박스, 검색어 생성 규칙</div>
-      <div class="actions"><button class="btn-ghost" data-goto="1">← 이전</button></div>
+      <p class="desc">엑셀(.xlsx)을 올리면 시트·헤더·컬럼을 자동 감지합니다. 감지 결과가 틀리면 드롭다운으로 교정하세요.</p>
+
+      <div id="dropzone" class="dropzone">
+        <div class="ico">📄</div>
+        <div><b>엑셀 파일을 여기에 끌어다 놓거나</b> 클릭해서 선택하세요</div>
+        <div class="hint" style="margin-top:6px">.xlsx · 여러 시트가 있으면 아래에서 선택할 수 있습니다</div>
+        <input id="fileInput" type="file" accept=".xlsx,.xls" hidden />
+      </div>
+      <div id="parseStatus" class="status"></div>
+
+      <div id="detect" class="detect">
+        <div class="grid row2" style="margin-top:4px">
+          <div>
+            <label for="sheetSel">시트 선택</label>
+            <select id="sheetSel"></select>
+          </div>
+          <div>
+            <label for="headerRowSel">헤더 행</label>
+            <select id="headerRowSel"></select>
+          </div>
+        </div>
+
+        <label style="margin-top:16px">컬럼 매핑 (자동 감지 — 필요 시 교정)</label>
+        <div class="map-grid" id="mapGrid"></div>
+
+        <label style="margin-top:18px">브랜드 필터 <span class="hint">— 조회할 브랜드를 고르세요 (기본: 클리오)</span></label>
+        <div class="brand-list" id="brandList"></div>
+
+        <div id="summary" class="summary"></div>
+
+        <div class="actions">
+          <button class="btn-ghost" data-goto="1">← 이전</button>
+          <div class="spacer"></div>
+          <button id="next2" class="btn-primary" disabled>검색어 미리보기 →</button>
+        </div>
+      </div>
     </div>
   </section>
+
+  <!-- ══ STEP 3: 검색어 미리보기 ══ -->
   <section class="step-page" data-step="3">
     <div class="panel">
       <h2>3. 검색어 미리보기</h2>
-      <div class="placeholder"><div class="big">🚧 Phase 2에서 구현됩니다</div>[품명 → 검색어] 표, 인라인 수정, 예상 호출 수</div>
-      <div class="actions"><button class="btn-ghost" data-goto="2">← 이전</button></div>
+      <p class="desc">품명에서 관리코드 괄호를 제거해 검색어를 생성했습니다. 각 검색어는 직접 수정할 수 있고,
+        수정 내역은 이 브라우저에 품명 기준으로 저장되어 같은 파일을 다시 올릴 때 자동 적용됩니다.</p>
+
+      <div class="toolbar">
+        <input id="qFilter" type="text" placeholder="🔎 품명·검색어 필터…" />
+        <span id="previewCount" class="hint"></span>
+        <div class="spacer"></div>
+        <button id="btnResetAll" class="btn-ghost btn-sm">수정 전체 초기화</button>
+      </div>
+
+      <div class="tablewrap">
+        <table class="preview">
+          <thead>
+            <tr>
+              <th class="idx">#</th>
+              <th>원본 품명</th>
+              <th>생성된 검색어 (수정 가능)</th>
+              <th class="reset-cell"></th>
+            </tr>
+          </thead>
+          <tbody id="previewBody"></tbody>
+        </table>
+      </div>
+
+      <div class="actions">
+        <button class="btn-ghost" data-goto="2">← 이전</button>
+        <div class="spacer"></div>
+        <button id="next3" class="btn-primary">실행 준비 →</button>
+      </div>
     </div>
   </section>
+
+  <!-- ══ STEP 4~6: 자리표시자 (이후 Phase) ══ -->
   <section class="step-page" data-step="4">
     <div class="panel">
       <h2>4. 실행</h2>
@@ -180,11 +298,15 @@
   </section>
 </div>
 
+<!-- ExcelJS: 엑셀 읽기/쓰기 (CDN 로드만) -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
 <script>
-/* ══════════════════════════════════════════════════════════════════
- *  CONFIG — 모든 임계값·키워드·정규식을 이 블록에서 관리 (튜닝 지점)
- *  각 값의 의미는 주석 참조. 판정 로직은 Phase 3~4에서 이 상수들을 사용.
- * ════════════════════════════════════════════════════════════════ */
+/* ═══════════════════════════════════════════════════════════════════════
+ *  LOGIC-BLOCK — CONFIG + 순수 로직(PL)
+ *  ⚠️ 이 블록(마커 사이)은 외부 Node 검증 하네스가 실제 소스 그대로 추출해
+ *     테스트할 수 있도록 유지합니다. DOM/window 등 브라우저 전역에 의존하지 마세요(순수 함수만).
+ * ═══════════════════════════════════════════════════════════════════════ */
+/* ===LOGIC-BLOCK-START=== */
 const CONFIG = {
   // ── API 호출 ──────────────────────────────────────────────
   DISPLAY: 40,                       // 검색당 수신 건수(정확도순 40건 받아 필터링)
@@ -193,12 +315,20 @@ const CONFIG = {
   RETRY_BACKOFF_MS: [1000, 2000, 4000], // HTTP 429 시 지수 백오프(3회)
   DAILY_LIMIT: 25000,                // 일일 호출 한도(표시용)
 
-  // ── 검색어 생성: 제거할 "내부 관리코드" 괄호 키워드 ──────────
-  //  원칙: 채널/시즌/관리 코드는 제거, 콜라보·에디션명은 유지
-  STRIP_PAREN_KEYWORDS: ['미주전용','홈쇼핑전용','홈쇼핑','일본수출용','수출용','국내디지털','위생허가','OY','AD'],
+  // ── 검색어 생성: 제거할 "내부 관리코드" 괄호 ────────────────
+  //  원칙: 채널/시즌/관리 코드는 제거, 콜라보·에디션명은 유지.
+  //  (1) 채널/상태 키워드 — 괄호 내용에 부분일치 시 제거
+  //      · 뒤 3개(디지털/일본온라인/미운영)는 실데이터 감사(3인 패널 합의)로 추가된 관리코드
+  STRIP_PAREN_KEYWORDS: ['미주전용','홈쇼핑전용','홈쇼핑','일본수출용','수출용','국내디지털','위생허가','디지털','일본온라인','미운영'],
+  //  (2) 코드 패턴 — 괄호 내용 전체가 이 패턴이면 제거
+  //      · OY/AD 시즌·관리 코드 (지시서 4장)
+  //      · 뒤 4개는 감사로 추가: SS/FW 시즌코드, ver 버전코드, 해외N 채널, YY년N절(십일절 등 이벤트)
+  STRIP_PAREN_CODE_PATTERNS: ['^\\d{2}OY(SS|FW)?$','^\\d{2}OY.+$','^\\d{2}AD$','^OY$','^AD$','^\\d{2}(SS|FW)$','^ver\\.?\\d+$','^해외\\d+$','^\\d{2}년\\d+절$'],
+  //  (3) 접미사 — 괄호 내용이 이 접미사로 끝나면 제거 (예: (○○전용))
+  STRIP_PAREN_SUFFIX: ['전용'],
+  //  ※ 보류(KEEP): (D1)·(클리오토이스토리팝업) — 의미 불명확해 Phase 6 재검토
 
   // ── 판정: 세트성 키워드(양방향 검사 — 단순 제외 아님) ────────
-  //  원본 품명 집합 S, 결과 제목 집합 R:  R−S≠∅ 또는 S−R≠∅ 이면 후보 탈락
   SET_KEYWORDS: ['세트','기획','증정','묶음','키링','1+1','2개','3개','+','리필','미니','대용량','더블'],
 
   // ── 판정: 토큰 매칭 임계값 ──────────────────────────────────
@@ -207,13 +337,12 @@ const CONFIG = {
 
   // ── 판정: 가격 이상치 ──────────────────────────────────────
   PRICE_MEDIAN_FLOOR: 0.5,           // 최저후보 < 중앙값×0.5 → "가격 이상" 마킹
-  PRICE_VS_RETAIL: 0.15,             // 최저후보 < 소비자가×0.15 → "소비자가 대비 과도하게 낮음" 마킹
+  PRICE_VS_RETAIL: 0.15,             // 최저후보 < 소비자가×0.15 → "소비자가 대비 과도하게 낮음"
 
-  // ── 판정: 용량/수량 추출 정규식 ─────────────────────────────
+  // ── 판정: 용량/수량 추출 단위 ───────────────────────────────
   QTY_UNITS: ['ml','mL','g','정','캡슐','포','매','일분','개입','개월','号','호','ea','EA'],
 
   // ── 보고서: 카테고리 자동분류(우선순위 순 — 구체 → 일반) ─────
-  //  첫 매칭 채택. '립'보다 '브로우'를 먼저 검사해 오분류 방지.
   CATEGORY_RULES: [
     ['아이브로우', ['브로우']],
     ['하이라이터', ['하이라이터']],
@@ -223,156 +352,502 @@ const CONFIG = {
     ['립',        ['틴트','립','루즈','글로스','밤크레용']],
   ],
   DEFAULT_CATEGORY: '기타',
+
+  // ── 파싱: 헤더 컬럼 매핑 키(정규화된 헤더 매칭) ─────────────
+  //  logical field → [매칭 규칙: 'eq' 완전일치 | 'sw' 접두일치] 헤더 텍스트
+  COLUMN_KEYS: [
+    ['brand',   'eq', '브랜드'],
+    ['name',    'eq', '품명'],
+    ['mfgDate', 'sw', '제조일자'],
+    ['expDate', 'sw', '유통기한'],
+    ['stock',   'sw', '재고수량'],
+    ['retail',  'sw', '소비자가'],
+    ['supply',  'sw', '공급가'],
+    ['note',    'sw', '비고'],
+  ],
 };
 
-/* ══════════════════════════════════════════════════════════════════
- *  앱 상태 & 유틸
- * ════════════════════════════════════════════════════════════════ */
-const $ = (id) => document.getElementById(id);
-const isFile = location.protocol === 'file:';
-
-const STEPS = [
-  { n: 1, label: '키 설정' },
-  { n: 2, label: '파일 업로드' },
-  { n: 3, label: '검색어' },
-  { n: 4, label: '실행' },
-  { n: 5, label: '결과' },
-  { n: 6, label: '다운로드' },
-];
-
-const state = {
-  current: 1,
-  maxUnlocked: 1,   // 여기까지 이동 가능(연결 테스트 통과 시 2로 확장)
-};
-
-const LS = {
-  cid: 'naver_cid',
-  csec: 'naver_csec',
-};
-
-/* ── 스텝퍼 렌더 ── */
-function renderStepper() {
-  const el = $('stepper');
-  el.innerHTML = '';
-  STEPS.forEach(({ n, label }) => {
-    const div = document.createElement('div');
-    const done = n < state.current && n <= state.maxUnlocked;
-    const active = n === state.current;
-    const clickable = n <= state.maxUnlocked;
-    div.className = 'step' + (active ? ' active' : '') + (done ? ' done' : '') + (clickable && !active ? ' clickable' : '');
-    div.innerHTML = `<span class="num">${done ? '✓' : n}</span><span>${label}</span>`;
-    if (clickable) div.addEventListener('click', () => goStep(n));
-    el.appendChild(div);
-  });
-}
-
-function goStep(n) {
-  if (n > state.maxUnlocked) return;
-  state.current = n;
-  document.querySelectorAll('.step-page').forEach((p) => {
-    p.classList.toggle('active', Number(p.dataset.step) === n);
-  });
-  renderStepper();
-  window.scrollTo({ top: 0, behavior: 'smooth' });
-}
-
-function unlock(upTo) {
-  state.maxUnlocked = Math.max(state.maxUnlocked, upTo);
-  renderStepper();
-}
-
-/* ── 상태 배너 ── */
-function setStatus(el, html, cls) {
-  el.className = 'status show ' + (cls || 'info');
-  el.innerHTML = html;
-}
-function clearStatus(el) { el.className = 'status'; el.innerHTML = ''; }
-
-/* ══════════════════════════════════════════════════════════════════
- *  STEP 1 — 키 설정 & 연결 테스트
- * ════════════════════════════════════════════════════════════════ */
-function loadKeys() {
-  try {
-    if (localStorage.getItem(LS.cid)) $('cid').value = localStorage.getItem(LS.cid);
-    if (localStorage.getItem(LS.csec)) $('csec').value = localStorage.getItem(LS.csec);
-  } catch (e) {}
-}
-function saveKeys(cid, csec) {
-  try {
-    if ($('remember').checked) {
-      localStorage.setItem(LS.cid, cid);
-      localStorage.setItem(LS.csec, csec);
-    } else {
-      localStorage.removeItem(LS.cid);
-      localStorage.removeItem(LS.csec);
+/* 순수 로직: 정규화·검색어 생성·헤더 감지·행 추출 (브라우저/Node 공용) */
+const PL = (function () {
+  // ExcelJS 셀 값 → 텍스트 (문자열/숫자/날짜/리치텍스트/하이퍼링크/수식 대응)
+  function cellText(v) {
+    if (v == null) return '';
+    if (typeof v === 'object') {
+      if (Array.isArray(v.richText)) return v.richText.map(function (t) { return t.text; }).join('');
+      if (v.text != null) return String(v.text);
+      if (v.result != null) return String(v.result);
+      if (v instanceof Date) return String(v.getTime());
+      return '';
     }
-  } catch (e) {}
-}
+    return String(v);
+  }
 
-async function testConnection() {
-  const cid = $('cid').value.trim();
-  const csec = $('csec').value.trim();
-  const st = $('testStatus');
+  // 텍스트 정규화: \xa0(non-breaking space)·개행·탭 → 공백, 연속공백 1개, trim
+  function normalizeText(v) {
+    return cellText(v)
+      .replace(/ /g, ' ')
+      .replace(/[\r\n\t]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
 
-  if (!cid || !csec) { setStatus(st, 'Client ID 와 Client Secret 을 먼저 입력하세요.', 'error'); return; }
-  saveKeys(cid, csec);
+  // 헤더 셀 비교용: 정규화 후 공백 완전 제거 → "재고수량\n(개)" → "재고수량(개)"
+  function normalizeHeader(v) {
+    return normalizeText(v).replace(/\s+/g, '');
+  }
 
-  $('btnTest').disabled = true;
-  setStatus(st, '<span class="spinner"></span>네이버 API에 연결 중…', 'info');
+  function isBlank(v) { return normalizeText(v) === ''; }
+  function isFootnote(v) { return normalizeText(v).indexOf('※') !== -1; }
 
-  const params = new URLSearchParams({ query: '비타민', display: '1', start: '1', sort: 'sim' });
-  try {
-    const r = await fetch('/api/search?' + params.toString(), {
-      headers: { 'X-Naver-Client-Id': cid, 'X-Naver-Client-Secret': csec },
+  // 관리코드 괄호 판정 (제거 대상이면 true)
+  function isStripParen(inner) {
+    var c = inner.trim();
+    for (var i = 0; i < CONFIG.STRIP_PAREN_CODE_PATTERNS.length; i++) {
+      if (new RegExp(CONFIG.STRIP_PAREN_CODE_PATTERNS[i], 'i').test(c)) return true;
+    }
+    for (var j = 0; j < CONFIG.STRIP_PAREN_KEYWORDS.length; j++) {
+      if (c.indexOf(CONFIG.STRIP_PAREN_KEYWORDS[j]) !== -1) return true;
+    }
+    for (var k = 0; k < CONFIG.STRIP_PAREN_SUFFIX.length; k++) {
+      if (c.slice(-CONFIG.STRIP_PAREN_SUFFIX[k].length) === CONFIG.STRIP_PAREN_SUFFIX[k]) return true;
+    }
+    return false;
+  }
+
+  // 소괄호( ) 관리코드만 제거. 대괄호[ ] 에디션·콜라보명은 항상 유지.
+  function stripManagementParens(name) {
+    return name.replace(/\(([^)]*)\)/g, function (m, inner) {
+      return isStripParen(inner) ? ' ' : m;
     });
-    const text = await r.text();
-    let data;
-    try { data = JSON.parse(text); }
-    catch (e) { setStatus(st, '응답을 해석할 수 없습니다 (HTTP ' + r.status + ').\n' + text.slice(0, 300), 'error'); $('btnTest').disabled = false; return; }
+  }
 
-    if (!r.ok || data.errorCode || data.errorMessage) {
-      setStatus(st,
-        '❌ 연결 실패 (HTTP ' + r.status + ')\n' +
-        'code: ' + (data.errorCode || '-') + '\n' +
-        'message: ' + (data.errorMessage || text) + '\n\n' +
-        '· 401 / 024 : Client ID·Secret 이 틀렸거나, 애플리케이션에 "검색" API 가 미등록\n' +
-        '· 429 : 일일 호출 한도(25,000건) 초과', 'error');
-      $('btnTest').disabled = false;
-      return;
+  // 품명 → 검색어: 정규화 → 관리코드 괄호 제거 → 브랜드 접두 보정
+  function generateQuery(rawName, brand) {
+    var s = normalizeText(rawName);
+    s = stripManagementParens(s).replace(/\s+/g, ' ').trim();
+    var b = normalizeText(brand);
+    if (b && s.indexOf(b) !== 0) s = b + ' ' + s;
+    return s.replace(/\s+/g, ' ').trim();
+  }
+
+  // 헤더 행 + 컬럼 매핑 자동 감지. rows2D = 원본 셀값 2차원 배열(0-based).
+  //  반환 { headerRowIndex, colMap } 또는 null(못 찾음)
+  function detectHeader(rows2D, scanLimit) {
+    var limit = Math.min(rows2D.length, scanLimit || 30);
+    for (var r = 0; r < limit; r++) {
+      var row = rows2D[r] || [];
+      var hs = row.map(normalizeHeader);
+      if (hs.indexOf('브랜드') !== -1 && hs.indexOf('품명') !== -1) {
+        return { headerRowIndex: r, colMap: buildColMap(row) };
+      }
     }
+    return null;
+  }
 
-    // 성공
-    setStatus(st, '✅ 연결 성공! 네이버 검색 API가 정상 작동합니다. (전체 ' +
-      (data.total || 0).toLocaleString('ko-KR') + '건 응답)  이제 다음 단계로 진행하세요.', 'ok');
-    $('btnTest').disabled = false;
-    $('next1').disabled = false;
-    unlock(2);
-  } catch (err) {
-    $('btnTest').disabled = false;
-    if (isFile) {
-      setStatus(st, '❌ 프록시 서버에 연결하지 못했습니다.\n\n파일을 직접 열면(file://) CORS로 호출이 되지 않습니다.\n프로젝트 폴더에서 "node server.js" 실행 후 http://localhost:3000 으로 접속하세요.', 'error');
-    } else {
-      setStatus(st, '❌ 요청 실패: ' + err.message + '\n\n로컬이면 server.js(프록시)가 실행 중인지 확인하세요.', 'error');
+  // 특정 헤더 행으로 컬럼 매핑 생성
+  function buildColMap(headerRow) {
+    var map = {};
+    for (var c = 0; c < headerRow.length; c++) {
+      var h = normalizeHeader(headerRow[c]);
+      if (!h) continue;
+      for (var i = 0; i < CONFIG.COLUMN_KEYS.length; i++) {
+        var field = CONFIG.COLUMN_KEYS[i][0], mode = CONFIG.COLUMN_KEYS[i][1], key = CONFIG.COLUMN_KEYS[i][2];
+        if (map[field] != null) continue; // 첫 매칭 우선
+        var hit = (mode === 'eq') ? (h === key) : (h.indexOf(key) === 0);
+        if (hit) { map[field] = c; break; }
+      }
+    }
+    return map;
+  }
+
+  // 데이터 행 추출(스킵 규칙 적용). 반환 [{brand,name,mfgDate,expDate,stock,retail,supply,note,row}]
+  function extractRows(rows2D, headerRowIndex, colMap) {
+    var out = [];
+    for (var r = headerRowIndex + 1; r < rows2D.length; r++) {
+      var row = rows2D[r] || [];
+      var brand = normalizeText(row[colMap.brand]);
+      var name = normalizeText(row[colMap.name]);
+      if (isFootnote(brand) || isFootnote(name)) continue; // ※ 각주행
+      if (name === '') continue;                            // 품명 없는 행(합계행 등)
+      out.push({
+        brand: brand, name: name,
+        mfgDate: normalizeText(row[colMap.mfgDate]),
+        expDate: normalizeText(row[colMap.expDate]),
+        stock: normalizeText(row[colMap.stock]),
+        retail: normalizeText(row[colMap.retail]),
+        supply: normalizeText(row[colMap.supply]),
+        note: normalizeText(row[colMap.note]),
+        row: r + 1, // 1-based 엑셀 행번호
+      });
+    }
+    return out;
+  }
+
+  // 고유 품명 목록(정규화된 name 기준 중복 제거, 첫 행 대표). 브랜드 필터 선택.
+  function uniqueItems(rows, selectedBrandsSet) {
+    var seen = Object.create(null), out = [];
+    for (var i = 0; i < rows.length; i++) {
+      var it = rows[i];
+      if (selectedBrandsSet && !selectedBrandsSet.has(it.brand)) continue;
+      if (seen[it.name]) continue;
+      seen[it.name] = true;
+      out.push(it);
+    }
+    return out;
+  }
+
+  // 브랜드별 고유 품명 수 집계 (전체)
+  function brandCounts(rows) {
+    var perBrandSeen = Object.create(null), counts = Object.create(null);
+    for (var i = 0; i < rows.length; i++) {
+      var b = rows[i].brand, key = b + ' ' + rows[i].name;
+      if (!perBrandSeen[key]) { perBrandSeen[key] = true; counts[b] = (counts[b] || 0) + 1; }
+    }
+    return counts;
+  }
+
+  return {
+    cellText: cellText, normalizeText: normalizeText, normalizeHeader: normalizeHeader,
+    isBlank: isBlank, isFootnote: isFootnote,
+    isStripParen: isStripParen, stripManagementParens: stripManagementParens, generateQuery: generateQuery,
+    detectHeader: detectHeader, buildColMap: buildColMap, extractRows: extractRows,
+    uniqueItems: uniqueItems, brandCounts: brandCounts,
+  };
+})();
+/* ===LOGIC-BLOCK-END=== */
+
+/* Node 검증 하네스용 export (브라우저에서는 module 미정의라 무시됨) */
+if (typeof module !== 'undefined' && module.exports) { module.exports = { CONFIG: CONFIG, PL: PL }; }
+
+/* ═══════════════════════════════════════════════════════════════════════
+ *  앱 (DOM · 상태 · UI) — 아래부터는 브라우저 전용
+ * ═══════════════════════════════════════════════════════════════════════ */
+(function () {
+  var $ = function (id) { return document.getElementById(id); };
+  var isFile = location.protocol === 'file:';
+
+  var STEPS = [
+    { n: 1, label: '키 설정' }, { n: 2, label: '파일 업로드' }, { n: 3, label: '검색어' },
+    { n: 4, label: '실행' }, { n: 5, label: '결과' }, { n: 6, label: '다운로드' },
+  ];
+  var LS = { cid: 'naver_cid', csec: 'naver_csec', overrides: 'nps_query_overrides' };
+
+  var state = {
+    current: 1, maxUnlocked: 1,
+    rows2D: null, sheetNames: [], activeSheet: null,
+    headerRowIndex: -1, colMap: {},
+    allRows: [], brandCounts: {}, selectedBrands: new Set(),
+    items: [], // 현재 선택 브랜드의 고유 품명
+  };
+
+  /* ── 스텝퍼 ── */
+  function renderStepper() {
+    var el = $('stepper'); el.innerHTML = '';
+    STEPS.forEach(function (s) {
+      var div = document.createElement('div');
+      var done = s.n < state.current && s.n <= state.maxUnlocked;
+      var active = s.n === state.current;
+      var clickable = s.n <= state.maxUnlocked;
+      div.className = 'step' + (active ? ' active' : '') + (done ? ' done' : '') + (clickable && !active ? ' clickable' : '');
+      div.innerHTML = '<span class="num">' + (done ? '✓' : s.n) + '</span><span>' + s.label + '</span>';
+      if (clickable) div.addEventListener('click', function () { goStep(s.n); });
+      el.appendChild(div);
+    });
+  }
+  function goStep(n) {
+    if (n > state.maxUnlocked) return;
+    state.current = n;
+    document.querySelectorAll('.step-page').forEach(function (p) {
+      p.classList.toggle('active', Number(p.dataset.step) === n);
+    });
+    if (n === 3) buildPreview();
+    renderStepper();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+  function unlock(upTo) { state.maxUnlocked = Math.max(state.maxUnlocked, upTo); renderStepper(); }
+
+  function setStatus(el, html, cls) { el.className = 'status show ' + (cls || 'info'); el.innerHTML = html; }
+  function clearStatus(el) { el.className = 'status'; el.innerHTML = ''; }
+
+  /* ═══ STEP 1 — 키 설정 ═══ */
+  function loadKeys() {
+    try {
+      if (localStorage.getItem(LS.cid)) $('cid').value = localStorage.getItem(LS.cid);
+      if (localStorage.getItem(LS.csec)) $('csec').value = localStorage.getItem(LS.csec);
+    } catch (e) {}
+  }
+  function saveKeys(cid, csec) {
+    try {
+      if ($('remember').checked) { localStorage.setItem(LS.cid, cid); localStorage.setItem(LS.csec, csec); }
+      else { localStorage.removeItem(LS.cid); localStorage.removeItem(LS.csec); }
+    } catch (e) {}
+  }
+  async function testConnection() {
+    var cid = $('cid').value.trim(), csec = $('csec').value.trim(), st = $('testStatus');
+    if (!cid || !csec) { setStatus(st, 'Client ID 와 Client Secret 을 먼저 입력하세요.', 'error'); return; }
+    saveKeys(cid, csec);
+    $('btnTest').disabled = true;
+    setStatus(st, '<span class="spinner"></span>네이버 API에 연결 중…', 'info');
+    var params = new URLSearchParams({ query: '비타민', display: '1', start: '1', sort: 'sim' });
+    try {
+      var r = await fetch('/api/search?' + params.toString(), { headers: { 'X-Naver-Client-Id': cid, 'X-Naver-Client-Secret': csec } });
+      var text = await r.text(), data;
+      try { data = JSON.parse(text); } catch (e) { setStatus(st, '응답을 해석할 수 없습니다 (HTTP ' + r.status + ').\n' + text.slice(0, 300), 'error'); $('btnTest').disabled = false; return; }
+      if (!r.ok || data.errorCode || data.errorMessage) {
+        setStatus(st, '❌ 연결 실패 (HTTP ' + r.status + ')\ncode: ' + (data.errorCode || '-') + '\nmessage: ' + (data.errorMessage || text) +
+          '\n\n· 401 / 024 : Client ID·Secret 이 틀렸거나, 애플리케이션에 "검색" API 가 미등록\n· 429 : 일일 호출 한도(25,000건) 초과', 'error');
+        $('btnTest').disabled = false; return;
+      }
+      setStatus(st, '✅ 연결 성공! 네이버 검색 API가 정상 작동합니다. (전체 ' + (data.total || 0).toLocaleString('ko-KR') + '건 응답)  이제 다음 단계로 진행하세요.', 'ok');
+      $('btnTest').disabled = false; $('next1').disabled = false; unlock(2);
+    } catch (err) {
+      $('btnTest').disabled = false;
+      if (isFile) setStatus(st, '❌ 프록시 서버에 연결하지 못했습니다.\n\n파일을 직접 열면(file://) CORS로 호출이 되지 않습니다.\n프로젝트 폴더에서 "node server.js" 실행 후 http://localhost:3000 으로 접속하세요.', 'error');
+      else setStatus(st, '❌ 요청 실패: ' + err.message + '\n\n로컬이면 server.js(프록시)가 실행 중인지 확인하세요.', 'error');
     }
   }
-}
 
-/* ══════════════════════════════════════════════════════════════════
- *  초기화
- * ════════════════════════════════════════════════════════════════ */
-(function init() {
-  if (isFile) $('fileWarn').classList.add('show');
-  loadKeys();
-  renderStepper();
+  /* ═══ STEP 2 — 업로드 · 파싱 ═══ */
+  function wireDropzone() {
+    var dz = $('dropzone'), fi = $('fileInput');
+    dz.addEventListener('click', function () { fi.click(); });
+    dz.addEventListener('dragover', function (e) { e.preventDefault(); dz.classList.add('drag'); });
+    dz.addEventListener('dragleave', function () { dz.classList.remove('drag'); });
+    dz.addEventListener('drop', function (e) {
+      e.preventDefault(); dz.classList.remove('drag');
+      if (e.dataTransfer.files && e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]);
+    });
+    fi.addEventListener('change', function () { if (fi.files && fi.files[0]) handleFile(fi.files[0]); });
+  }
 
-  $('btnTest').addEventListener('click', testConnection);
-  $('next1').addEventListener('click', () => goStep(2));
-  ['cid', 'csec'].forEach((id) => {
-    $(id).addEventListener('keydown', (e) => { if (e.key === 'Enter') testConnection(); });
-  });
-  document.querySelectorAll('[data-goto]').forEach((b) => {
-    b.addEventListener('click', () => goStep(Number(b.dataset.goto)));
-  });
+  async function handleFile(file) {
+    var st = $('parseStatus');
+    setStatus(st, '<span class="spinner"></span>“' + file.name + '” 읽는 중…', 'info');
+    $('detect').classList.remove('show');
+    try {
+      var t0 = performance.now();
+      var buf = await file.arrayBuffer();
+      var wb = new ExcelJS.Workbook();
+      await wb.xlsx.load(buf);
+      state.workbook = wb;
+      state.sheetNames = wb.worksheets.map(function (ws) { return ws.name; });
+      var ms = Math.round(performance.now() - t0);
+      // 시트 드롭다운(원본 우선 선택)
+      var sel = $('sheetSel'); sel.innerHTML = '';
+      state.sheetNames.forEach(function (nm) { var o = document.createElement('option'); o.value = nm; o.textContent = nm; sel.appendChild(o); });
+      var def = state.sheetNames.indexOf('원본') !== -1 ? '원본' : state.sheetNames[0];
+      sel.value = def;
+      setStatus(st, '✅ “' + file.name + '” 로드 완료 · 시트 ' + state.sheetNames.length + '개 · ' + ms + 'ms', 'ok');
+      $('detect').classList.add('show');
+      loadSheet(def);
+    } catch (err) {
+      setStatus(st, '❌ 엑셀을 읽지 못했습니다: ' + err.message + '\n\n.xlsx 형식이 맞는지 확인하세요.', 'error');
+    }
+  }
+
+  // 워크시트 → rows2D(원본 셀값 2차원) 추출
+  function sheetToRows2D(ws) {
+    var rows2D = [];
+    ws.eachRow({ includeEmpty: true }, function (row, rn) {
+      var vals = [];
+      row.eachCell({ includeEmpty: true }, function (cell, cn) { vals[cn - 1] = cell.value; });
+      rows2D[rn - 1] = vals;
+    });
+    for (var i = 0; i < rows2D.length; i++) if (!rows2D[i]) rows2D[i] = [];
+    return rows2D;
+  }
+
+  function loadSheet(name) {
+    var ws = state.workbook.getWorksheet(name);
+    state.activeSheet = name;
+    state.rows2D = sheetToRows2D(ws);
+    // 헤더 행 드롭다운(1~최대 15행)
+    var hsel = $('headerRowSel'); hsel.innerHTML = '';
+    var maxH = Math.min(state.rows2D.length, 15);
+    for (var r = 0; r < maxH; r++) {
+      var o = document.createElement('option'); o.value = r;
+      var preview = (state.rows2D[r] || []).map(PL.normalizeText).filter(Boolean).slice(0, 4).join(' · ');
+      o.textContent = (r + 1) + '행: ' + (preview || '(빈 행)');
+      hsel.appendChild(o);
+    }
+    var det = PL.detectHeader(state.rows2D);
+    if (det) { hsel.value = det.headerRowIndex; applyHeaderRow(det.headerRowIndex, det.colMap); }
+    else { applyHeaderRow(Number(hsel.value), PL.buildColMap(state.rows2D[Number(hsel.value)] || [])); }
+  }
+
+  function applyHeaderRow(hIdx, colMap) {
+    state.headerRowIndex = hIdx;
+    state.colMap = colMap || PL.buildColMap(state.rows2D[hIdx] || []);
+    renderColMapUI();
+    recompute();
+  }
+
+  // 컬럼 매핑 교정 드롭다운
+  function renderColMapUI() {
+    var grid = $('mapGrid'); grid.innerHTML = '';
+    var headerRow = state.rows2D[state.headerRowIndex] || [];
+    var colCount = 0;
+    state.rows2D.forEach(function (r) { colCount = Math.max(colCount, r.length); });
+    var labels = { brand: '브랜드', name: '품명', mfgDate: '제조일자', expDate: '유통기한', stock: '재고수량', retail: '소비자가', supply: '공급가', note: '비고' };
+    Object.keys(labels).forEach(function (field) {
+      var cell = document.createElement('div'); cell.className = 'cell';
+      var sel = document.createElement('select');
+      var none = document.createElement('option'); none.value = ''; none.textContent = '(없음)'; sel.appendChild(none);
+      for (var c = 0; c < colCount; c++) {
+        var o = document.createElement('option'); o.value = c;
+        var htxt = PL.normalizeText(headerRow[c]);
+        o.textContent = colLetter(c) + '열' + (htxt ? ' · ' + htxt : '');
+        sel.appendChild(o);
+      }
+      sel.value = state.colMap[field] != null ? String(state.colMap[field]) : '';
+      sel.addEventListener('change', function () {
+        state.colMap[field] = sel.value === '' ? null : Number(sel.value);
+        recompute();
+      });
+      var lab = document.createElement('label'); lab.textContent = labels[field];
+      cell.appendChild(lab); cell.appendChild(sel); grid.appendChild(cell);
+    });
+  }
+  function colLetter(i) { var s = ''; i += 1; while (i > 0) { var m = (i - 1) % 26; s = String.fromCharCode(65 + m) + s; i = Math.floor((i - 1) / 26); } return s; }
+
+  // 헤더/매핑 변경 시: 행 추출 → 브랜드 목록/카운트 → 요약
+  function recompute() {
+    if (state.colMap.brand == null || state.colMap.name == null) {
+      $('brandList').innerHTML = '<span class="hint">브랜드·품명 컬럼을 지정하세요.</span>';
+      $('summary').classList.remove('show'); $('next2').disabled = true; return;
+    }
+    state.allRows = PL.extractRows(state.rows2D, state.headerRowIndex, state.colMap);
+    state.brandCounts = PL.brandCounts(state.allRows);
+    renderBrandList();
+    updateSummary();
+  }
+
+  function renderBrandList() {
+    var list = $('brandList'); list.innerHTML = '';
+    var brands = Object.keys(state.brandCounts).sort(function (a, b) { return state.brandCounts[b] - state.brandCounts[a]; });
+    if (!brands.length) { list.innerHTML = '<span class="hint">데이터 행을 찾지 못했습니다.</span>'; return; }
+    // 최초 1회: 클리오 기본 선택(있으면), 없으면 전체
+    if (state.selectedBrands.size === 0) {
+      if (state.brandCounts['클리오']) state.selectedBrands.add('클리오');
+      else brands.forEach(function (b) { state.selectedBrands.add(b); });
+    }
+    brands.forEach(function (b) {
+      var on = state.selectedBrands.has(b);
+      var chip = document.createElement('label'); chip.className = 'brand-chip' + (on ? ' on' : '');
+      chip.innerHTML = '<input type="checkbox" ' + (on ? 'checked' : '') + '> <span>' + b + '</span> <span class="cnt">' + state.brandCounts[b] + '</span>';
+      var cb = chip.querySelector('input');
+      cb.addEventListener('change', function () {
+        if (cb.checked) state.selectedBrands.add(b); else state.selectedBrands.delete(b);
+        chip.classList.toggle('on', cb.checked);
+        updateSummary();
+      });
+      list.appendChild(chip);
+    });
+  }
+
+  function updateSummary() {
+    var sel = state.selectedBrands;
+    state.items = PL.uniqueItems(state.allRows, sel);
+    var n = state.items.length;
+    var sum = $('summary');
+    if (!n) { sum.classList.remove('show'); $('next2').disabled = true; return; }
+    var over = n > CONFIG.DAILY_LIMIT;
+    sum.classList.add('show');
+    sum.innerHTML = '선택 브랜드 <b>' + Array.from(sel).length + '</b>개 · 고유 품명 <b>' + n.toLocaleString('ko-KR') + '</b>개' +
+      ' = 예상 API 호출 <b>' + n.toLocaleString('ko-KR') + '</b>회' +
+      '<div class="hint" style="margin-top:6px">일일 한도 ' + CONFIG.DAILY_LIMIT.toLocaleString('ko-KR') + '건' +
+      (over ? ' <span class="warn">— 한도를 초과합니다! 브랜드를 줄이거나 나눠서 실행하세요.</span>' : ' · 여유 ' + (CONFIG.DAILY_LIMIT - n).toLocaleString('ko-KR') + '건') + '</div>';
+    $('next2').disabled = false;
+    unlock(3);
+  }
+
+  /* ═══ STEP 3 — 검색어 미리보기 ═══ */
+  function getOverrides() { try { return JSON.parse(localStorage.getItem(LS.overrides) || '{}'); } catch (e) { return {}; } }
+  function setOverrides(o) { try { localStorage.setItem(LS.overrides, JSON.stringify(o)); } catch (e) {} }
+
+  function buildPreview() {
+    var ov = getOverrides();
+    // items에 검색어(자동/수정) 부여
+    state.items.forEach(function (it) {
+      it.autoQuery = PL.generateQuery(it.name, it.brand);
+      it.query = (ov[it.name] != null && ov[it.name] !== '') ? ov[it.name] : it.autoQuery;
+      it.edited = (ov[it.name] != null && ov[it.name] !== '' && ov[it.name] !== it.autoQuery);
+    });
+    renderPreviewTable('');
+  }
+
+  function renderPreviewTable(filter) {
+    var body = $('previewBody'); body.innerHTML = '';
+    var f = (filter || '').trim().toLowerCase();
+    var shown = 0;
+    var frag = document.createDocumentFragment();
+    state.items.forEach(function (it, i) {
+      if (f && it.name.toLowerCase().indexOf(f) === -1 && it.query.toLowerCase().indexOf(f) === -1) return;
+      shown++;
+      var tr = document.createElement('tr'); if (it.edited) tr.className = 'edited';
+      tr.dataset.name = it.name;
+      var brandTag = state.selectedBrands.size > 1 ? '<span class="brand-tag">' + it.brand + '</span>' : '';
+      tr.innerHTML =
+        '<td class="idx">' + (i + 1) + '</td>' +
+        '<td class="name">' + brandTag + escapeHtml(it.name) + '</td>' +
+        '<td><input class="qinput" type="text" value="' + escapeAttr(it.query) + '"></td>' +
+        '<td class="reset-cell"><button class="reset-btn" title="자동 검색어로 되돌리기">↺</button></td>';
+      frag.appendChild(tr);
+    });
+    body.appendChild(frag);
+    $('previewCount').textContent = '표시 ' + shown.toLocaleString('ko-KR') + ' / 전체 ' + state.items.length.toLocaleString('ko-KR') + '건';
+  }
+
+  function wirePreview() {
+    var body = $('previewBody');
+    // 인라인 수정
+    body.addEventListener('input', function (e) {
+      if (!e.target.classList.contains('qinput')) return;
+      var tr = e.target.closest('tr'), name = tr.dataset.name, val = e.target.value;
+      var it = findItem(name); if (!it) return;
+      it.query = val;
+      var ov = getOverrides();
+      if (val.trim() === '' || val === it.autoQuery) { delete ov[name]; it.edited = false; }
+      else { ov[name] = val; it.edited = true; }
+      setOverrides(ov);
+      tr.classList.toggle('edited', it.edited);
+    });
+    // 되돌리기
+    body.addEventListener('click', function (e) {
+      if (!e.target.classList.contains('reset-btn')) return;
+      var tr = e.target.closest('tr'), name = tr.dataset.name, it = findItem(name); if (!it) return;
+      it.query = it.autoQuery; it.edited = false;
+      var ov = getOverrides(); delete ov[name]; setOverrides(ov);
+      tr.querySelector('.qinput').value = it.autoQuery; tr.classList.remove('edited');
+    });
+    $('qFilter').addEventListener('input', function () { renderPreviewTable(this.value); });
+    $('btnResetAll').addEventListener('click', function () {
+      if (!confirm('모든 수정 내역을 지우고 자동 생성 검색어로 되돌릴까요?')) return;
+      setOverrides({});
+      state.items.forEach(function (it) { it.query = it.autoQuery; it.edited = false; });
+      renderPreviewTable($('qFilter').value);
+    });
+  }
+  function findItem(name) { for (var i = 0; i < state.items.length; i++) if (state.items[i].name === name) return state.items[i]; return null; }
+
+  function escapeHtml(s) { var d = document.createElement('div'); d.textContent = s == null ? '' : String(s); return d.innerHTML; }
+  function escapeAttr(s) { return escapeHtml(s).replace(/"/g, '&quot;'); }
+
+  /* ═══ 초기화 ═══ */
+  (function init() {
+    if (isFile) $('fileWarn').classList.add('show');
+    loadKeys(); renderStepper(); wireDropzone(); wirePreview();
+    $('btnTest').addEventListener('click', testConnection);
+    $('next1').addEventListener('click', function () { goStep(2); });
+    $('sheetSel').addEventListener('change', function () { state.selectedBrands = new Set(); loadSheet(this.value); });
+    $('headerRowSel').addEventListener('change', function () { applyHeaderRow(Number(this.value)); });
+    $('next2').addEventListener('click', function () { goStep(3); });
+    $('next3').addEventListener('click', function () { goStep(4); });
+    ['cid', 'csec'].forEach(function (id) { $(id).addEventListener('keydown', function (e) { if (e.key === 'Enter') testConnection(); }); });
+    document.querySelectorAll('[data-goto]').forEach(function (b) { b.addEventListener('click', function () { goStep(Number(b.dataset.goto)); }); });
+    // 디버그/검증용 노출
+    window.__NPS__ = { state: state, PL: PL, CONFIG: CONFIG };
+  })();
 })();
 </script>
 </body>
