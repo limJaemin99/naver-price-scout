@@ -150,6 +150,23 @@
   .reset-btn{background:transparent; border:0; color:var(--sub); cursor:pointer; font-size:14px; padding:2px 4px; display:none}
   tr.edited .reset-btn{display:inline}
   .brand-tag{display:inline-block; font-size:11px; color:var(--sub); background:var(--bg); border:1px solid var(--line); border-radius:5px; padding:0 5px; margin-right:6px}
+
+  /* ── STEP 4 실행 ── */
+  .banner.resume{background:var(--warn-bg); color:var(--warn); border:1px solid color-mix(in srgb,var(--warn) 30%, transparent)}
+  .banner.resume.show{display:flex; gap:10px; align-items:center; flex-wrap:wrap}
+  .run-head{display:flex; gap:10px; flex-wrap:wrap; margin:4px 0 14px}
+  .run-stat{flex:1 1 90px; background:var(--bg); border:1px solid var(--line); border-radius:10px; padding:10px 12px; text-align:center}
+  .run-stat .k{display:block; font-size:11px; color:var(--sub); margin-bottom:2px}
+  .run-stat b{font-size:20px; font-variant-numeric:tabular-nums}
+  .run-stat.ok b{color:var(--ok)} .run-stat.warn b{color:var(--warn)} .run-stat.err b{color:var(--danger)}
+  .progress{height:12px; background:var(--bg); border:1px solid var(--line); border-radius:99px; overflow:hidden; margin-bottom:6px}
+  .progress-fill{height:100%; width:0%; background:var(--brand); transition:width .2s}
+  .run-actions{display:flex; gap:10px; margin-top:16px; flex-wrap:wrap}
+  .run-log{margin-top:8px; max-height:280px; overflow:auto; border:1px solid var(--line); border-radius:10px; background:var(--bg); font-family:ui-monospace,Consolas,monospace; font-size:12px}
+  .run-log .line{padding:5px 10px; border-bottom:1px solid var(--line); white-space:pre-wrap; word-break:break-all}
+  .run-log .line:last-child{border-bottom:0}
+  .run-log .line.ok{color:var(--ok)} .run-log .line.warn{color:var(--warn)} .run-log .line.error{color:var(--danger)} .run-log .line.info{color:var(--sub)}
+  .run-log .empty{padding:16px; text-align:center; color:var(--sub)}
 </style>
 </head>
 <body>
@@ -162,6 +179,12 @@
   <div id="fileWarn" class="banner warn">
     ⚠️ 이 페이지를 파일로 직접 열었습니다(<code>file://</code>). 네이버 API는 브라우저 직접 호출을 CORS로 막습니다.
     프로젝트 폴더에서 <code>node server.js</code> 실행 후 <b>http://localhost:3000</b> 으로 접속하세요.
+  </div>
+
+  <div id="topResume" class="banner resume">
+    ⏸ 진행 중이던 조회 작업이 있습니다 (<b id="topResumeInfo"></b>).
+    <button id="topResumeGo" class="btn-sm btn-primary">이어하기</button>
+    <button id="topResumeDismiss" class="btn-sm btn-ghost">닫기</button>
   </div>
 
   <!-- ── 스텝퍼 ── -->
@@ -277,9 +300,46 @@
   <!-- ══ STEP 4~6: 자리표시자 (이후 Phase) ══ -->
   <section class="step-page" data-step="4">
     <div class="panel">
-      <h2>4. 실행</h2>
-      <div class="placeholder"><div class="big">🚧 Phase 3에서 구현됩니다</div>진행률·실시간 로그·일시정지/재개·중간 저장</div>
-      <div class="actions"><button class="btn-ghost" data-goto="3">← 이전</button></div>
+      <h2>4. 실행 — 최저가 조회</h2>
+      <p class="desc">최종 검색어를 순차로 조회해 결과를 이 브라우저(IndexedDB)에 캐시합니다.
+        판정은 다음 단계에서 수행하며, 캐시 덕분에 임계값을 바꿔도 API 재호출 없이 재판정할 수 있습니다.</p>
+
+      <div id="runResume" class="banner resume" style="margin-bottom:14px">
+        ⏸ 같은 목록의 이전 진행분이 있습니다 (<b id="runResumeInfo"></b>). <b>실행 시작</b>을 누르면 남은 건만 이어서 조회합니다.
+        <button id="btnNewJob" class="btn-sm btn-ghost">캐시 지우고 새로</button>
+      </div>
+
+      <div class="run-head">
+        <div class="run-stat"><span class="k">전체</span><b id="runTotal">0</b></div>
+        <div class="run-stat"><span class="k">완료</span><b id="runDone">0</b></div>
+        <div class="run-stat ok"><span class="k">수신</span><b id="runOk">0</b></div>
+        <div class="run-stat warn"><span class="k">결과없음</span><b id="runEmpty">0</b></div>
+        <div class="run-stat err"><span class="k">실패</span><b id="runFail">0</b></div>
+        <div class="run-stat"><span class="k">재시도</span><b id="runRetry">0</b></div>
+      </div>
+      <div class="progress"><div id="progressFill" class="progress-fill"></div></div>
+      <div id="progressText" class="hint">대기 중</div>
+
+      <div style="margin-top:14px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <label style="margin:0">샘플만 실행</label>
+        <input id="sampleN" type="number" min="0" value="0" style="width:90px">
+        <span class="hint">건 (0 = 전체). 소량으로 먼저 확인할 때 사용하세요.</span>
+      </div>
+
+      <div class="run-actions">
+        <button id="btnStart" class="btn-primary">▶ 실행 시작</button>
+        <button id="btnPause" class="btn-ghost" disabled>⏸ 일시정지</button>
+        <button id="btnStop" class="btn-ghost" disabled>⏹ 중단</button>
+      </div>
+
+      <label style="margin-top:18px">실시간 로그 (최근 20건)</label>
+      <div id="runLog" class="run-log"><div class="empty">실행 시작을 누르면 여기에 진행 상황이 표시됩니다.</div></div>
+
+      <div class="actions">
+        <button class="btn-ghost" data-goto="3">← 이전</button>
+        <div class="spacer"></div>
+        <button id="next4" class="btn-primary" disabled>결과 확인 →</button>
+      </div>
     </div>
   </section>
   <section class="step-page" data-step="5">
@@ -506,12 +566,30 @@ const PL = (function () {
     return counts;
   }
 
+  // 네이버 title의 <b> 등 HTML 태그 + 엔티티 제거 (판정·캐시 저장 공용)
+  function stripTags(s) {
+    return cellText(s).replace(/<[^>]*>/g, '')
+      .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'").replace(/&amp;/g, '&')
+      .replace(/\s+/g, ' ').trim();
+  }
+
+  // 파일 지문 = 고유 검색어 목록의 해시 (FNV-1a 32bit). 정렬 후 계산 → 순서 무관.
+  function hashQueries(queries) {
+    var arr = queries.slice().sort();
+    var joined = arr.join('');
+    var h = 2166136261;
+    for (var i = 0; i < joined.length; i++) { h ^= joined.charCodeAt(i); h = (h * 16777619) >>> 0; }
+    return ('0000000' + h.toString(16)).slice(-8) + '_' + arr.length;
+  }
+
   return {
     cellText: cellText, normalizeText: normalizeText, normalizeHeader: normalizeHeader,
     isBlank: isBlank, isFootnote: isFootnote,
     isStripParen: isStripParen, stripManagementParens: stripManagementParens, generateQuery: generateQuery,
     detectHeader: detectHeader, buildColMap: buildColMap, extractRows: extractRows,
     uniqueItems: uniqueItems, brandCounts: brandCounts,
+    stripTags: stripTags, hashQueries: hashQueries,
   };
 })();
 /* ===LOGIC-BLOCK-END=== */
@@ -530,7 +608,7 @@ if (typeof module !== 'undefined' && module.exports) { module.exports = { CONFIG
     { n: 1, label: '키 설정' }, { n: 2, label: '파일 업로드' }, { n: 3, label: '검색어' },
     { n: 4, label: '실행' }, { n: 5, label: '결과' }, { n: 6, label: '다운로드' },
   ];
-  var LS = { cid: 'naver_cid', csec: 'naver_csec', overrides: 'nps_query_overrides' };
+  var LS = { cid: 'naver_cid', csec: 'naver_csec', overrides: 'nps_query_overrides', active: 'nps_active' };
 
   var state = {
     current: 1, maxUnlocked: 1,
@@ -561,6 +639,7 @@ if (typeof module !== 'undefined' && module.exports) { module.exports = { CONFIG
       p.classList.toggle('active', Number(p.dataset.step) === n);
     });
     if (n === 3) buildPreview();
+    if (n === 4) enterRunStep().catch(function (e) { $('progressText').textContent = '⚠️ ' + (e && e.message ? e.message : e); });
     renderStepper();
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
@@ -774,6 +853,7 @@ if (typeof module !== 'undefined' && module.exports) { module.exports = { CONFIG
       it.edited = (ov[it.name] != null && ov[it.name] !== '' && ov[it.name] !== it.autoQuery);
     });
     renderPreviewTable('');
+    if (state.items.length) unlock(4); // 검색어가 준비되면 실행 단계 진입 허용
   }
 
   function renderPreviewTable(filter) {
@@ -833,6 +913,364 @@ if (typeof module !== 'undefined' && module.exports) { module.exports = { CONFIG
   function escapeHtml(s) { var d = document.createElement('div'); d.textContent = s == null ? '' : String(s); return d.innerHTML; }
   function escapeAttr(s) { return escapeHtml(s).replace(/"/g, '&quot;'); }
 
+  /* ═══════════════════════════════════════════════════════════════════
+   *  STEP 4 — 순차 호출 엔진 (딜레이 · 429 백오프 · IndexedDB 증류 캐시 · 이어하기)
+   *  ⚠️ 판정 로직 없음(Phase 4). 여기서는 "수신"만 하고 결과를 캐시한다.
+   * ═══════════════════════════════════════════════════════════════════ */
+
+  // ── IndexedDB 래퍼 (results: 쿼리→증류결과 / jobs: 지문→작업정의) ──
+  var IDB = (function () {
+    var DB = 'nps', VER = 1, _db = null;
+    function open() {
+      return new Promise(function (resolve, reject) {
+        if (_db) return resolve(_db);
+        if (typeof indexedDB === 'undefined' || !indexedDB) { reject(new Error('이 브라우저/모드에서는 IndexedDB를 사용할 수 없습니다.')); return; }
+        var req = indexedDB.open(DB, VER);
+        req.onupgradeneeded = function (e) {
+          var db = e.target.result;
+          if (!db.objectStoreNames.contains('results')) db.createObjectStore('results', { keyPath: 'query' });
+          if (!db.objectStoreNames.contains('jobs')) db.createObjectStore('jobs', { keyPath: 'fingerprint' });
+        };
+        req.onsuccess = function () { _db = req.result; resolve(_db); };
+        req.onerror = function () { reject(req.error); };
+      });
+    }
+    // 트랜잭션+요청을 한 마이크로태스크 안에서 발행(자동 커밋 회피)
+    function op(store, mode, fn) {
+      return open().then(function (db) {
+        return new Promise(function (res, rej) {
+          var req = fn(db.transaction(store, mode).objectStore(store));
+          req.onsuccess = function () { res(req.result); };
+          req.onerror = function () { rej(req.error); };
+        });
+      });
+    }
+    return {
+      put: function (s, v) { return op(s, 'readwrite', function (os) { return os.put(v); }); },
+      get: function (s, k) { return op(s, 'readonly', function (os) { return os.get(k); }).then(function (r) { return r || null; }); },
+      all: function (s) { return op(s, 'readonly', function (os) { return os.getAll(); }).then(function (r) { return r || []; }); },
+      keys: function (s) { return op(s, 'readonly', function (os) { return os.getAllKeys(); }).then(function (r) { return r || []; }); },
+      del: function (s, k) { return op(s, 'readwrite', function (os) { return os.delete(k); }); },
+      clear: function (s) { return op(s, 'readwrite', function (os) { return os.clear(); }); },
+    };
+  })();
+
+  // ── 엔진 상태 ──
+  var engine = {
+    queue: [], fingerprint: '', idx: 0, completed: 0,
+    running: false, paused: false, stopFlag: false,
+    counts: { ok: 0, empty: 0, fail: 0, retry: 0 },
+    logs: [],
+  };
+
+  function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+
+  // state.items(최종 검색어)에서 고유 검색어 큐 생성. names = 같은 검색어를 쓰는 품명들.
+  function buildQueueFromItems() {
+    var map = Object.create(null), order = [];
+    state.items.forEach(function (it) {
+      var q = String(it.query != null ? it.query : PL.generateQuery(it.name, it.brand)).trim();
+      if (!q) return;
+      if (!map[q]) { map[q] = { query: q, names: [] }; order.push(map[q]); }
+      map[q].names.push(it.name);
+    });
+    return order;
+  }
+
+  // 캐시에서 완료건/카운트 복원
+  //  현재 작업(지문)에 속한 결과만 집계. completed = 성공(ok+empty)만 — 실패는 재시도 대상.
+  async function loadProgressFromCache() {
+    var recs = await IDB.all('results');
+    var byQ = Object.create(null);
+    recs.forEach(function (r) { if (r.fingerprint === engine.fingerprint) byQ[r.query] = r; });
+    var c = { ok: 0, empty: 0, fail: 0, retry: (engine.counts && engine.counts.retry) || 0 };
+    engine.queue.forEach(function (item) {
+      var r = byQ[item.query];
+      if (!r) return;
+      if (r.status === 'ok') c.ok++; else if (r.status === 'empty') c.empty++; else c.fail++;
+    });
+    engine.counts = c; engine.completed = c.ok + c.empty;
+    return byQ;
+  }
+
+  // Step 4 진입: 큐 구성 → 지문 → 작업 저장 → 진행 복원 → UI
+  async function enterRunStep() {
+    if (engine.running) return; // 실행 중 재진입 방지
+    if (!state.items || !state.items.length) {
+      // 파일이 없는 상태(새로고침 등): 이어하기 배너로만 안내
+      if (!engine.queue.length) { $('progressText').textContent = '조회할 검색어가 없습니다. 2·3단계를 먼저 진행하세요.'; return; }
+    } else {
+      engine.queue = buildQueueFromItems();
+      // 샘플만 실행: 앞 N건으로 제한(별도 작업으로 취급 — 지문이 달라짐)
+      var sn = parseInt($('sampleN').value, 10);
+      if (sn > 0 && sn < engine.queue.length) engine.queue = engine.queue.slice(0, sn);
+      engine.fingerprint = PL.hashQueries(engine.queue.map(function (q) { return q.query; }));
+      await IDB.put('jobs', { fingerprint: engine.fingerprint, queue: engine.queue, total: engine.queue.length, createdAt: Date.now() });
+    }
+    await loadProgressFromCache();
+    renderRunUI();
+  }
+
+  function renderRunUI() {
+    var total = engine.queue.length;
+    var attempted = engine.completed + engine.counts.fail;
+    var partial = attempted > 0 && engine.completed < total;
+    $('runResume').classList.toggle('show', partial);
+    if (partial) $('runResumeInfo').textContent = engine.completed + ' / ' + total + ' 완료' + (engine.counts.fail ? ' · 실패 ' + engine.counts.fail : '');
+    setRunButtons(engine.completed >= total && total > 0 ? 'done' : 'idle');
+    updateProgress();
+    renderLog();
+    $('next4').disabled = !(total > 0 && attempted >= total);
+  }
+
+  function updateProgress() {
+    var total = engine.queue.length;
+    var attempted = engine.completed + engine.counts.fail;
+    $('runTotal').textContent = total;
+    $('runDone').textContent = engine.completed;
+    $('runOk').textContent = engine.counts.ok;
+    $('runEmpty').textContent = engine.counts.empty;
+    $('runFail').textContent = engine.counts.fail;
+    $('runRetry').textContent = engine.counts.retry;
+    var pct = total ? Math.round(attempted / total * 100) : 0;
+    $('progressFill').style.width = pct + '%';
+    var st = engine.running ? (engine.paused ? '일시정지됨' : '조회 중…')
+      : (engine.completed >= total && total ? '수신 완료'
+        : (attempted >= total && total ? '시도 완료 (실패 재시도 가능)' : '대기 중'));
+    $('progressText').textContent = st + ' · 시도 ' + attempted + '/' + total + ' (' + pct + '%)' + (engine.counts.fail ? ' · 실패 ' + engine.counts.fail : '');
+  }
+
+  function setRunButtons(mode) {
+    var start = $('btnStart'), pause = $('btnPause'), stop = $('btnStop');
+    if (mode === 'running') {
+      start.disabled = true; pause.disabled = false; stop.disabled = false;
+      pause.textContent = '⏸ 일시정지';
+    } else if (mode === 'paused') {
+      start.disabled = true; pause.disabled = false; stop.disabled = false;
+      pause.textContent = '▶ 재개';
+    } else if (mode === 'done') {
+      start.disabled = true; pause.disabled = true; stop.disabled = true;
+      start.textContent = '✓ 완료';
+    } else { // idle / stopped
+      start.disabled = false; pause.disabled = true; stop.disabled = true;
+      start.textContent = engine.completed > 0 ? '▶ 이어서 실행' : '▶ 실행 시작';
+    }
+  }
+
+  function pushLog(level, msg) {
+    engine.logs.push({ level: level, msg: msg });
+    if (engine.logs.length > 20) engine.logs.shift();
+    renderLog();
+  }
+  function renderLog() {
+    var box = $('runLog');
+    if (!engine.logs.length) { box.innerHTML = '<div class="empty">실행 시작을 누르면 여기에 진행 상황이 표시됩니다.</div>'; return; }
+    box.innerHTML = engine.logs.slice().reverse().map(function (l) {
+      return '<div class="line ' + l.level + '">' + escapeHtml(l.msg) + '</div>';
+    }).join('');
+  }
+
+  function saveMeta() {
+    try {
+      localStorage.setItem(LS.active, JSON.stringify({
+        fingerprint: engine.fingerprint, total: engine.queue.length,
+        completed: engine.completed, lastIndex: engine.idx, updatedAt: Date.now(),
+      }));
+    } catch (e) {}
+  }
+
+  // 백오프 대기(일시정지/중단 감지하며 분할 sleep)
+  async function backoffWait(totalMs) {
+    var slept = 0;
+    while (slept < totalMs) {
+      if (engine.stopFlag) return;
+      while (engine.paused && !engine.stopFlag) await sleep(150);
+      await sleep(Math.min(200, totalMs - slept));
+      slept += 200;
+    }
+  }
+
+  // 단건 조회 (429/네트워크 오류 → 지수 백오프, 401/403 → 전체 중단)
+  async function fetchOne(query, cid, csec) {
+    var params = new URLSearchParams({ query: query, display: String(CONFIG.DISPLAY), start: '1', sort: CONFIG.SORT });
+    var url = '/api/search?' + params.toString();
+    var attempt = 0;
+    while (true) {
+      var r = null, netErr = null, text = null;
+      try {
+        r = await fetch(url, { headers: { 'X-Naver-Client-Id': cid, 'X-Naver-Client-Secret': csec } });
+        // 429/401/403은 상태만으로 판단하므로, 그 외에만 본문을 읽는다.
+        // (본문 읽기는 fetch와 같은 try 안에 두어, 스트리밍 중 연결 끊김도 네트워크 오류로 처리)
+        if (r.status !== 429 && r.status !== 401 && r.status !== 403) text = await r.text();
+      } catch (e) { netErr = e; }
+
+      // 429 또는 네트워크/본문읽기 오류 → 백오프 (사유 구분)
+      var isRetryable = netErr || (r && r.status === 429);
+      if (isRetryable) {
+        if (attempt < CONFIG.RETRY_BACKOFF_MS.length) {
+          var wait = CONFIG.RETRY_BACKOFF_MS[attempt]; attempt++;
+          engine.counts.retry++;
+          pushLog('warn', (netErr ? '네트워크 오류' : '429 한도') + ' 재시도 ' + attempt + '/' + CONFIG.RETRY_BACKOFF_MS.length + ' (' + (wait / 1000) + 's) · ' + query);
+          updateProgress();
+          await backoffWait(wait);
+          if (engine.stopFlag) return { aborted: true };
+          continue;
+        }
+        var reason = netErr ? 'network 오류(재시도 초과)' : '429 한도초과(재시도 초과)';
+        return { record: { query: query, status: 'fail', reason: reason, ts: Date.now() }, level: 'error', logMsg: '실패(' + (netErr ? 'network' : '429') + ') · ' + query };
+      }
+
+      if (r.status === 401 || r.status === 403) {
+        return { halt: true, reason: '❌ 인증 실패 (HTTP ' + r.status + '). Client ID/Secret 을 확인하고 1단계 연결 테스트를 다시 하세요.' };
+      }
+
+      var data = null;
+      try { data = JSON.parse(text); } catch (e) {}
+      if (!r.ok || !data || data.errorCode || data.errorMessage) {
+        var msg = (data && data.errorMessage) ? data.errorMessage : ('HTTP ' + r.status);
+        return { record: { query: query, status: 'fail', reason: msg, ts: Date.now() }, level: 'error', logMsg: '실패 · ' + query + ' (' + msg + ')' };
+      }
+
+      // 성공 → 판정에 필요한 필드만 증류해 저장
+      var candidates = (data.items || []).map(distill);
+      var status = candidates.length ? 'ok' : 'empty';
+      var lo = candidates.reduce(function (m, c) { var p = parseInt(c.lprice, 10); return (!isNaN(p) && p < m) ? p : m; }, Infinity);
+      return {
+        record: { query: query, status: status, total: data.total || 0, candidates: candidates, ts: Date.now() },
+        level: status === 'ok' ? 'ok' : 'warn',
+        logMsg: status === 'ok'
+          ? ('수신 ' + candidates.length + '건 · 최저 ' + (isFinite(lo) ? lo.toLocaleString('ko-KR') + '원' : '-') + ' · ' + query)
+          : ('결과 없음 · ' + query),
+      };
+    }
+  }
+
+  // 40건 중 판정에 필요한 필드만 증류(응답 원본 통째 저장 금지)
+  function distill(raw) {
+    return {
+      title: PL.stripTags(raw.title), lprice: raw.lprice, mallName: raw.mallName, link: raw.link,
+      productType: raw.productType, brand: raw.brand,
+      category1: raw.category1, category2: raw.category2, category3: raw.category3, category4: raw.category4,
+    };
+  }
+
+  // 순차 러너 — 어떤 예외에도 engine.running/버튼이 잠기지 않도록 try/finally로 감쌈
+  async function runLoop() {
+    if (engine.running) return;
+    var cid = localStorage.getItem(LS.cid), csec = localStorage.getItem(LS.csec);
+    if (!cid || !csec) { pushLog('error', '키가 없습니다. 1단계에서 연결 테스트를 먼저 하세요.'); return; }
+    if (!engine.queue.length) { pushLog('error', '조회할 검색어가 없습니다.'); return; }
+
+    engine.running = true; engine.paused = false; engine.stopFlag = false;
+    engine.counts.retry = 0;
+    setRunButtons('running');
+    try {
+      // 이번 작업(지문)에서 이미 "성공"한 검색어만 스킵. 실패건은 재시도(스킵 안 함).
+      var recs = await IDB.all('results');
+      var doneKeys = new Set(recs.filter(function (r) { return r.fingerprint === engine.fingerprint && r.status !== 'fail'; })
+        .map(function (r) { return r.query; }));
+
+      for (engine.idx = 0; engine.idx < engine.queue.length; engine.idx++) {
+        if (engine.stopFlag) break;
+        while (engine.paused && !engine.stopFlag) await sleep(150);
+        if (engine.stopFlag) break;
+
+        var item = engine.queue[engine.idx];
+        if (doneKeys.has(item.query)) continue; // 이미 성공 → 건너뜀(이어하기)
+
+        var res = await fetchOne(item.query, cid, csec);
+        if (res.aborted) break;
+        if (res.halt) { pushLog('error', res.reason); break; }
+
+        res.record.fingerprint = engine.fingerprint; // 작업별 스코프
+        try {
+          await IDB.put('results', res.record);
+        } catch (e) {
+          engine.counts.fail++;
+          pushLog('error', '결과 저장 실패(저장소 용량 초과 가능) · ' + item.query);
+          updateProgress();
+          continue; // 저장 실패 → doneKeys 미추가(재실행 시 재시도)
+        }
+        if (res.record.status === 'ok') { engine.counts.ok++; engine.completed++; doneKeys.add(item.query); }
+        else if (res.record.status === 'empty') { engine.counts.empty++; engine.completed++; doneKeys.add(item.query); }
+        else { engine.counts.fail++; } // 실패는 완료로 세지 않음 + doneKeys 미추가 → 재실행 시 재시도
+
+        pushLog(res.level, '[' + (engine.completed + engine.counts.fail) + '/' + engine.queue.length + '] ' + res.logMsg);
+        saveMeta();
+        updateProgress();
+
+        if (engine.idx < engine.queue.length - 1 && !engine.stopFlag) await sleep(CONFIG.CALL_DELAY_MS);
+      }
+    } catch (err) {
+      pushLog('error', '실행 중 오류: ' + (err && err.message ? err.message : err));
+    } finally {
+      engine.running = false;
+      try { await loadProgressFromCache(); } catch (e) {} // 지문 스코프로 완료수/카운트 재계산
+      var total = engine.queue.length;
+      var attempted = engine.completed + engine.counts.fail;
+      if (engine.stopFlag) {
+        setRunButtons('idle'); pushLog('info', '중단됨 · 캐시는 보존됩니다 (다시 실행하면 이어서 진행).');
+      } else if (engine.completed >= total && total > 0) {
+        setRunButtons('done'); pushLog('info', '✅ 전체 수신 완료. (판정은 다음 단계)'); unlock(5);
+      } else {
+        setRunButtons('idle');
+        if (attempted >= total && total > 0) pushLog('warn', '⚠️ 시도 완료 · 실패 ' + engine.counts.fail + '건 — "이어서 실행"으로 재시도할 수 있습니다.');
+      }
+      $('next4').disabled = !(total > 0 && attempted >= total);
+      updateProgress();
+      var partial = attempted > 0 && engine.completed < total;
+      $('runResume').classList.toggle('show', partial);
+      if (partial) $('runResumeInfo').textContent = engine.completed + ' / ' + total + ' 완료' + (engine.counts.fail ? ' · 실패 ' + engine.counts.fail : '');
+    }
+  }
+
+  function pauseResume() {
+    if (!engine.running) return;
+    engine.paused = !engine.paused;
+    setRunButtons(engine.paused ? 'paused' : 'running');
+    updateProgress();
+  }
+  function stopRun() { engine.stopFlag = true; engine.paused = false; }
+
+  async function newJob() {
+    if (engine.running) return;
+    if (!confirm('이 목록(현재 작업)의 캐시된 조회 결과를 지우고 처음부터 다시 시작할까요?')) return;
+    // 현재 작업(지문)에 속한 결과만 삭제 — 다른 파일 작업의 캐시는 보존
+    var recs = await IDB.all('results');
+    for (var i = 0; i < recs.length; i++) {
+      if (recs[i].fingerprint === engine.fingerprint) await IDB.del('results', recs[i].query);
+    }
+    try { localStorage.removeItem(LS.active); } catch (e) {}
+    engine.counts = { ok: 0, empty: 0, fail: 0, retry: 0 }; engine.completed = 0; engine.idx = 0; engine.logs = [];
+    renderRunUI();
+  }
+
+  // 새로고침 후: 파일 없이도 이어하기 (localStorage 메타 → 없으면 저장된 작업 스캔으로 복원)
+  async function checkResumeOnLoad() {
+    var meta = null;
+    try { meta = JSON.parse(localStorage.getItem(LS.active) || 'null'); } catch (e) {}
+    var job = null;
+    if (meta && meta.fingerprint) job = await IDB.get('jobs', meta.fingerprint);
+    if (job && job.queue) {
+      engine.queue = job.queue; engine.fingerprint = job.fingerprint;
+      await loadProgressFromCache();
+    } else {
+      // LS.active 유실 대비: 저장된 작업 중 미완료가 있으면 가장 최근 것을 복원
+      var jobs = await IDB.all('jobs');
+      jobs.sort(function (a, b) { return (b.createdAt || 0) - (a.createdAt || 0); });
+      for (var i = 0; i < jobs.length; i++) {
+        engine.queue = jobs[i].queue || []; engine.fingerprint = jobs[i].fingerprint;
+        await loadProgressFromCache();
+        if (engine.queue.length && engine.completed < engine.queue.length) { job = jobs[i]; break; }
+      }
+      if (!job) return;
+    }
+    if (engine.completed >= engine.queue.length) return; // 이미 완료면 배너 불필요
+    $('topResumeInfo').textContent = engine.completed + ' / ' + engine.queue.length + ' 완료' + (engine.counts.fail ? ' · 실패 ' + engine.counts.fail : '');
+    $('topResume').classList.add('show');
+    unlock(4);
+  }
+
   /* ═══ 초기화 ═══ */
   (function init() {
     if (isFile) $('fileWarn').classList.add('show');
@@ -843,10 +1281,21 @@ if (typeof module !== 'undefined' && module.exports) { module.exports = { CONFIG
     $('headerRowSel').addEventListener('change', function () { applyHeaderRow(Number(this.value)); });
     $('next2').addEventListener('click', function () { goStep(3); });
     $('next3').addEventListener('click', function () { goStep(4); });
+    $('next4').addEventListener('click', function () { goStep(5); });
+    // 실행 버튼
+    $('btnStart').addEventListener('click', function () { runLoop().catch(function (e) { pushLog('error', '실행 실패: ' + (e && e.message ? e.message : e)); }); });
+    $('btnPause').addEventListener('click', pauseResume);
+    $('btnStop').addEventListener('click', stopRun);
+    $('btnNewJob').addEventListener('click', newJob);
+    $('sampleN').addEventListener('change', function () { if (state.items.length && !engine.running) enterRunStep(); });
+    // 이어하기 배너(상단)
+    $('topResumeGo').addEventListener('click', function () { $('topResume').classList.remove('show'); unlock(4); goStep(4); });
+    $('topResumeDismiss').addEventListener('click', function () { $('topResume').classList.remove('show'); });
     ['cid', 'csec'].forEach(function (id) { $(id).addEventListener('keydown', function (e) { if (e.key === 'Enter') testConnection(); }); });
     document.querySelectorAll('[data-goto]').forEach(function (b) { b.addEventListener('click', function () { goStep(Number(b.dataset.goto)); }); });
+    checkResumeOnLoad().catch(function (e) { console.warn('이어하기 확인 실패:', e && e.message ? e.message : e); });
     // 디버그/검증용 노출
-    window.__NPS__ = { state: state, PL: PL, CONFIG: CONFIG };
+    window.__NPS__ = { state: state, PL: PL, CONFIG: CONFIG, engine: engine, IDB: IDB, runLoop: runLoop, enterRunStep: enterRunStep, buildQueueFromItems: buildQueueFromItems, fetchOne: fetchOne, distill: distill };
   })();
 })();
 </script>
