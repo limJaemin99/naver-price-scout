@@ -167,6 +167,28 @@
   .run-log .line:last-child{border-bottom:0}
   .run-log .line.ok{color:var(--ok)} .run-log .line.warn{color:var(--warn)} .run-log .line.error{color:var(--danger)} .run-log .line.info{color:var(--sub)}
   .run-log .empty{padding:16px; text-align:center; color:var(--sub)}
+
+  /* ── STEP 5 결과 ── */
+  .tabs{display:flex; gap:6px; flex-wrap:wrap; margin:4px 0 14px}
+  .tab{padding:8px 14px; border:1px solid var(--line); border-radius:9px; background:var(--bg); color:var(--sub); font-size:13px; font-weight:600; cursor:pointer}
+  .tab.active{background:var(--card); color:var(--ink); border-color:var(--accent); box-shadow:var(--shadow)}
+  .tab .n{font-weight:800; margin-left:4px}
+  .tab.ok.active{border-color:var(--ok)} .tab.warn.active{border-color:var(--warn)} .tab.gray.active{border-color:var(--sub)}
+  table.results{width:100%; border-collapse:collapse; font-size:12.5px}
+  table.results th,table.results td{padding:8px 9px; border-bottom:1px solid var(--line); text-align:left; vertical-align:top}
+  table.results thead th{position:sticky; top:0; background:var(--card); z-index:1; font-size:11.5px; color:var(--sub); white-space:nowrap}
+  table.results td.price{font-weight:800; color:var(--price); white-space:nowrap; text-align:right; font-variant-numeric:tabular-nums}
+  table.results td.nm{max-width:230px}
+  table.results .q{color:var(--sub); font-size:11px; margin-top:2px}
+  table.results a.lk{color:var(--accent); text-decoration:none; font-weight:700; white-space:nowrap}
+  table.results tr.v-확정{background:color-mix(in srgb,var(--ok) 8%, transparent)}
+  table.results tr.v-확인필요{background:color-mix(in srgb,var(--warn) 9%, transparent)}
+  table.results tr.v-검색결과없음{background:color-mix(in srgb,var(--sub) 8%, transparent)}
+  .vbadge{display:inline-block; font-size:11px; font-weight:800; border-radius:5px; padding:1px 7px; white-space:nowrap}
+  .vbadge.확정{background:var(--ok-bg); color:var(--ok)}
+  .vbadge.확인필요{background:var(--warn-bg); color:var(--warn)}
+  .vbadge.검색결과없음{background:var(--bg); color:var(--sub); border:1px solid var(--line)}
+  .reason{color:var(--sub); font-size:11.5px}
 </style>
 </head>
 <body>
@@ -344,9 +366,36 @@
   </section>
   <section class="step-page" data-step="5">
     <div class="panel">
-      <h2>5. 결과 확인</h2>
-      <div class="placeholder"><div class="big">🚧 Phase 4에서 구현됩니다</div>판정별 필터 탭, 확인필요 사유·링크</div>
-      <div class="actions"><button class="btn-ghost" data-goto="4">← 이전</button></div>
+      <h2>5. 결과 확인 — 판정</h2>
+      <p class="desc">캐시된 검색 결과를 판정 규칙으로 분류합니다(API 재호출 없음).
+        <b>확인필요</b>는 사유와 함께 표시되니, 링크로 직접 확인 후 판단하세요.
+        <span class="hint">애매하면 확정하지 않고 확인필요로 남깁니다.</span></p>
+
+      <div id="resultSummary" class="summary" style="background:var(--bg);border-color:var(--line)"></div>
+
+      <div class="tabs" id="resultTabs"></div>
+
+      <div class="toolbar">
+        <input id="rFilter" type="text" placeholder="🔎 품명·판매처 필터…" />
+        <span id="resultCount" class="hint"></span>
+        <div class="spacer"></div>
+        <button id="btnSelfTest" class="btn-ghost btn-sm" title="판정 로직 내장 테스트를 콘솔에 실행">🧪 판정 로직 자체 테스트</button>
+      </div>
+
+      <div class="tablewrap">
+        <table class="results">
+          <thead>
+            <tr><th>#</th><th>품명 / 검색어</th><th>최저가</th><th>판매처</th><th>판정</th><th>사유 · 링크</th></tr>
+          </thead>
+          <tbody id="resultBody"></tbody>
+        </table>
+      </div>
+
+      <div class="actions">
+        <button class="btn-ghost" data-goto="4">← 이전</button>
+        <div class="spacer"></div>
+        <button id="next5" class="btn-primary" disabled>다운로드 →</button>
+      </div>
     </div>
   </section>
   <section class="step-page" data-step="6">
@@ -400,7 +449,8 @@ const CONFIG = {
   PRICE_VS_RETAIL: 0.15,             // 최저후보 < 소비자가×0.15 → "소비자가 대비 과도하게 낮음"
 
   // ── 판정: 용량/수량 추출 단위 ───────────────────────────────
-  QTY_UNITS: ['ml','mL','g','정','캡슐','포','매','일분','개입','개월','号','호','ea','EA'],
+  //  '号/호'는 화장품에서 용량이 아니라 셰이드(21호)라 제외 — 옵션코드 경로로 처리(21↔21호).
+  QTY_UNITS: ['ml','mL','g','정','캡슐','포','매','일분','개입','개월','ea','EA'],
 
   // ── 보고서: 카테고리 자동분류(우선순위 순 — 구체 → 일반) ─────
   CATEGORY_RULES: [
@@ -592,10 +642,183 @@ const PL = (function () {
     stripTags: stripTags, hashQueries: hashQueries,
   };
 })();
+
+/* ═══ 판정 파이프라인 (지시서 6장) — 순수 로직 ═══════════════════════
+ *  절대 원칙: 애매하면 확인필요, 확정은 보수적으로. 모든 확인필요에 사유 기록.
+ *  캐시된 증류 후보로 재판정 가능(API 재호출 없음).
+ *  입력 item = { name(원본 품명), brand, query(최종 검색어), retail(소비자가) }
+ *       candidates = [{ title(태그제거됨), lprice, mallName, link, productType, brand, category1~4 }]
+ */
+const JUDGE = (function () {
+  function nc(s) { return PL.normalizeText(s).toLowerCase(); }
+  function pct(r) { return Math.round(r * 100) + '%'; }
+  function diff(a, b) { return a.filter(function (x) { return b.indexOf(x) === -1; }); }
+
+  // 세트성 키워드 집합(존재하는 것만) — 원본/결과 양쪽에서 추출해 양방향 비교
+  //  '+'는 숫자로 감싼 경우(1+1·2+1)만 인정 → SPF50+·PA++++ 오탐 방지.
+  //  'N개'는 숫자 경계 + '개월' 제외 → 3개월분·12개입 오탐 방지.
+  function setKeywordsOf(text) {
+    var t = nc(text), found = [];
+    CONFIG.SET_KEYWORDS.forEach(function (k) {
+      var hit;
+      if (k === '+') hit = /\d\s*\+\s*\d/.test(t);
+      else if (/^\d개$/.test(k)) hit = new RegExp('(?<!\\d)' + k + '(?!월)').test(t);
+      else hit = t.indexOf(k.toLowerCase()) !== -1;
+      if (hit && found.indexOf(k) === -1) found.push(k);
+    });
+    return found;
+  }
+
+  // 용량/수량 추출 → 정규화 토큰(예: ["45ml","30일분"])
+  function qtyOf(text) {
+    var re = new RegExp('(\\d+(?:\\.\\d+)?)\\s*(' + CONFIG.QTY_UNITS.join('|') + ')', 'gi');
+    var t = PL.normalizeText(text), out = [], m;
+    while ((m = re.exec(t)) !== null) { var v = m[1] + m[2].toLowerCase(); if (out.indexOf(v) === -1) out.push(v); }
+    return out;
+  }
+
+  // 검색어 토큰(브랜드·괄호 내용 제외). 옵션코드·색상은 괄호 밖이라 유지됨.
+  function queryTokens(query, brand) {
+    var q = nc(query).replace(/\([^)]*\)/g, ' ').replace(/\[[^\]]*\]/g, ' ');
+    var b = nc(brand);
+    if (b && q.indexOf(b) === 0) q = q.slice(b.length);
+    return q.split(/\s+/).filter(Boolean);
+  }
+
+  // 옵션 코드 토큰(005, 34c, 21, 21호, m205, 1.5 등)
+  function isOptionCode(tok) {
+    return /^\d{1,4}[a-z]?$/i.test(tok) || /^\d{1,3}호$/.test(tok) || /^[a-z]\d{2,4}$/i.test(tok) || /^\d+\.\d+$/.test(tok);
+  }
+  // 필수 토큰 = 옵션코드 + 그 뒤 색상명 토큰(가중 필수). 옵션코드 없으면 마지막 토큰(변형/색상)을 필수로.
+  function requiredTokens(tokens) {
+    var req = [], lastCode = -1;
+    for (var i = 0; i < tokens.length; i++) if (isOptionCode(tokens[i])) { req.push(tokens[i]); lastCode = i; }
+    if (lastCode >= 0) { for (var j = lastCode + 1; j < tokens.length; j++) if (req.indexOf(tokens[j]) === -1) req.push(tokens[j]); }
+    else if (tokens.length) req.push(tokens[tokens.length - 1]);
+    return req;
+  }
+  // 경계 인식 부분일치: 토큰 양옆이 지정한 문자군(한글 또는 숫자)이 아니어야 매칭 인정.
+  function boundedContains(titleNc, tok, boundaryRe) {
+    var idx = titleNc.indexOf(tok);
+    while (idx !== -1) {
+      var before = idx === 0 ? '' : titleNc.charAt(idx - 1);
+      var after = titleNc.charAt(idx + tok.length);
+      if ((before === '' || !boundaryRe.test(before)) && (after === '' || !boundaryRe.test(after))) return true;
+      idx = titleNc.indexOf(tok, idx + 1);
+    }
+    return false;
+  }
+  // 토큰이 제목에 "의미 있게" 존재하는가.
+  //  한글(색상): 코랄 ⊄ 코랄베리 (한글 경계)
+  //  옵션코드(숫자): 5 ⊄ 25, 6 ⊄ 16 (숫자 경계). 단 010 ⊂ 틴트010코랄, 21 ⊂ 21호 는 허용.
+  //  그 외(제품명 영문 등): 부분일치 허용.
+  function tokenPresent(titleNc, tok) {
+    if (/[가-힣]/.test(tok)) return boundedContains(titleNc, tok, /[가-힣]/);
+    if (isOptionCode(tok)) return boundedContains(titleNc, tok, /[0-9]/);
+    return titleNc.indexOf(tok) !== -1;
+  }
+  // 토큰 비율은 부분일치(느슨) 유지 — 제품명 단어가 붙어쓰기(클리오틴트)여도 매칭.
+  //  오확정 방지 경계 검사는 필수 토큰(색상/옵션코드)에만 tokenPresent로 적용한다.
+  function tokenMatchRatio(tokens, title) {
+    if (!tokens.length) return 0;
+    var t = nc(title), hit = 0;
+    tokens.forEach(function (tok) { if (t.indexOf(tok) !== -1) hit++; });
+    return hit / tokens.length;
+  }
+
+  // 후보 1건 평가 → { pass, marks[], drop, dropCat, ratio, qty }
+  //  drop=상세사유(값 포함), dropCat=안정 카테고리(최다 탈락사유 집계용)
+  function evalCandidate(item, cand) {
+    var title = cand.title || '';
+    // 세트성 양방향 검사
+    var S = setKeywordsOf(item.name), R = setKeywordsOf(title);
+    var RmS = diff(R, S), SmR = diff(S, R);
+    if (RmS.length) return { pass: false, dropCat: '결과에만 세트성', drop: '결과에만 세트성(' + RmS.join('·') + ')' };
+    if (SmR.length) return { pass: false, dropCat: '원본 세트인데 결과 단품', drop: '원본 세트인데 결과 단품(' + SmR.join('·') + ')' };
+    // 토큰 매칭
+    var tokens = queryTokens(item.query, item.brand);
+    var ratio = tokenMatchRatio(tokens, title);
+    if (ratio < CONFIG.TOKEN_MATCH_PARTIAL) return { pass: false, dropCat: '토큰일치 낮음', drop: '토큰일치 낮음(' + pct(ratio) + ')' };
+    var marks = [];
+    if (ratio < CONFIG.TOKEN_MATCH_FULL) marks.push('부분일치(' + pct(ratio) + ')');
+    // 옵션/색상 필수 토큰 (한글 색상·숫자 코드 경계 인식 — 코랄⊄코랄베리, 5⊄25 오확정 방지)
+    var titleNc = nc(title);
+    var miss = requiredTokens(tokens).filter(function (tok) { return !tokenPresent(titleNc, tok); });
+    if (miss.length) marks.push('옵션 불일치: ' + miss.join('·') + ' 미확인');
+    // 용량 비교
+    var oq = qtyOf(item.name), rq = qtyOf(title);
+    if (oq.length && rq.length) {
+      if (!oq.some(function (q) { return rq.indexOf(q) !== -1; })) return { pass: false, dropCat: '용량 불일치', drop: '용량 불일치 ' + oq.join('/') + '↔' + rq.join('/') };
+    } else if (oq.length && !rq.length) marks.push('용량 미확인(원본 ' + oq.join('/') + ')');
+    else if (!oq.length && rq.length) marks.push('결과 용량 ' + rq.join('/') + '(원본 없음)');
+    return { pass: true, marks: marks, ratio: ratio, qty: (rq[0] || oq[0] || null) };
+  }
+
+  function toNum(v) { var n = parseInt(String(v == null ? '' : v).replace(/[^0-9.]/g, ''), 10); return isNaN(n) ? null : n; } // 콤마·단위 제거 후 파싱
+  function priceOf(c) { return toNum(c.lprice); }
+  function mostCommon(counts) { var best = null, bn = -1; Object.keys(counts).forEach(function (k) { if (counts[k] > bn) { bn = counts[k]; best = k; } }); return best; }
+
+  // 품목 판정 → { verdict, price, mall, link, productType, qty, title, reasons[], survivorCount, candidateCount }
+  function judge(item, candidates) {
+    candidates = candidates || [];
+    var survivors = [], drops = {}, dropEx = {};
+    candidates.forEach(function (c) {
+      var e = evalCandidate(item, c);
+      if (e.pass) survivors.push({ cand: c, marks: e.marks, ratio: e.ratio, qty: e.qty });
+      else { var cat = e.dropCat || e.drop; drops[cat] = (drops[cat] || 0) + 1; if (!dropEx[cat]) dropEx[cat] = e.drop; }
+    });
+
+    var out = { verdict: '', price: null, mall: null, link: null, productType: null, qty: null, title: null, reasons: [], survivorCount: survivors.length, candidateCount: candidates.length };
+    if (!survivors.length) {
+      out.verdict = '검색결과없음';
+      if (!candidates.length) out.reasons.push('검색 결과 0건');
+      else { var top = mostCommon(drops); out.reasons.push('결과 ' + candidates.length + '건 전부 탈락 — 최다: ' + top + (dropEx[top] && dropEx[top] !== top ? ' (예: ' + dropEx[top] + ')' : '')); }
+      return out;
+    }
+
+    survivors.sort(function (a, b) { var pa = priceOf(a.cand), pb = priceOf(b.cand); return (pa == null ? Infinity : pa) - (pb == null ? Infinity : pb); });
+    var prices = survivors.map(function (s) { return priceOf(s.cand); }).filter(function (p) { return p != null; }).sort(function (a, b) { return a - b; });
+    var n = prices.length;
+    var median = n ? (n % 2 ? prices[(n - 1) / 2] : (prices[n / 2 - 1] + prices[n / 2]) / 2) : null; // 짝수 개수 시 참 중앙값
+
+    function priceMarks(price) {
+      var m = [];
+      if (median && price != null && price < median * CONFIG.PRICE_MEDIAN_FLOOR) m.push('가격 이상(중앙값 대비 ' + Math.round(price / median * 100) + '%)');
+      var retail = toNum(item.retail);
+      if (retail != null && retail > 0 && price != null && price < retail * CONFIG.PRICE_VS_RETAIL) m.push('소비자가 대비 과도하게 낮음(' + Math.round(price / retail * 100) + '%)');
+      return m;
+    }
+    function fill(s) { out.price = priceOf(s.cand); out.mall = s.cand.mallName || null; out.link = s.cand.link || null; out.productType = s.cand.productType || null; out.qty = s.qty || null; out.title = s.cand.title || null; }
+
+    var clean = survivors.filter(function (s) { return s.marks.length === 0; });
+    if (clean.length) {
+      var catalogs = clean.filter(function (s) { return String(s.cand.productType) === '1'; });
+      var chosen = catalogs.length ? catalogs[0] : clean[0]; // 가격 오름차순 정렬됨
+      fill(chosen);
+      var pm = priceMarks(priceOf(chosen.cand));
+      if (pm.length) { out.verdict = '확인필요'; out.reasons = pm; return out; }
+      if (catalogs.length) { out.verdict = '확정'; out.reasons = ['네이버 카탈로그(productType=1) 최저가']; return out; }
+      if (chosen.ratio >= 1) { out.verdict = '확정'; out.reasons = ['토큰 100% 일치 최저가']; return out; }
+      out.verdict = '확인필요'; out.reasons = ['유사일치(토큰 ' + pct(chosen.ratio) + ')']; return out;
+    }
+    // clean 후보 없음 → 최저가 생존 후보 참고로 확인필요
+    var low = survivors[0];
+    fill(low);
+    out.verdict = '확인필요';
+    out.reasons = low.marks.concat(priceMarks(priceOf(low.cand)));
+    if (!out.reasons.length) out.reasons = ['확인 필요'];
+    return out;
+  }
+
+  return {
+    judge: judge, evalCandidate: evalCandidate, setKeywordsOf: setKeywordsOf, qtyOf: qtyOf,
+    queryTokens: queryTokens, requiredTokens: requiredTokens, tokenMatchRatio: tokenMatchRatio, isOptionCode: isOptionCode,
+  };
+})();
 /* ===LOGIC-BLOCK-END=== */
 
 /* Node 검증 하네스용 export (브라우저에서는 module 미정의라 무시됨) */
-if (typeof module !== 'undefined' && module.exports) { module.exports = { CONFIG: CONFIG, PL: PL }; }
+if (typeof module !== 'undefined' && module.exports) { module.exports = { CONFIG: CONFIG, PL: PL, JUDGE: JUDGE }; }
 
 /* ═══════════════════════════════════════════════════════════════════════
  *  앱 (DOM · 상태 · UI) — 아래부터는 브라우저 전용
@@ -640,6 +863,7 @@ if (typeof module !== 'undefined' && module.exports) { module.exports = { CONFIG
     });
     if (n === 3) buildPreview();
     if (n === 4) enterRunStep().catch(function (e) { $('progressText').textContent = '⚠️ ' + (e && e.message ? e.message : e); });
+    if (n === 5) renderResults().catch(function (e) { $('resultSummary').classList.add('show'); $('resultSummary').innerHTML = '⚠️ ' + (e && e.message ? e.message : e); });
     renderStepper();
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
@@ -1271,6 +1495,116 @@ if (typeof module !== 'undefined' && module.exports) { module.exports = { CONFIG
     unlock(4);
   }
 
+  /* ═══════════════════════════════════════════════════════════════════
+   *  STEP 5 — 판정 결과 (캐시 기반 재판정, API 재호출 없음)
+   * ═══════════════════════════════════════════════════════════════════ */
+  var resultsState = { judged: [], activeTab: '전체' };
+
+  async function renderResults() {
+    var body = $('resultBody'), tabs = $('resultTabs'), summary = $('resultSummary');
+    if (!state.items || !state.items.length) {
+      summary.classList.add('show');
+      summary.innerHTML = '<span style="color:var(--warn)">품목 정보가 없습니다. 2~3단계를 먼저 진행하세요.</span>';
+      tabs.innerHTML = ''; body.innerHTML = ''; $('next5').disabled = true; return;
+    }
+    var recs = await IDB.all('results');
+    var map = Object.create(null);
+    recs.forEach(function (r) { if (r.fingerprint === engine.fingerprint) map[r.query] = r; });
+
+    resultsState.judged = state.items.map(function (it) {
+      var rec = map[it.query];
+      if (!rec) return { item: it, verdict: '미조회', reasons: ['아직 조회하지 않음'], price: null, mall: null, link: null };
+      if (rec.status === 'fail') return { item: it, verdict: '조회실패', reasons: [rec.reason || '조회 실패'], price: null, mall: null, link: null };
+      var j = JUDGE.judge({ name: it.name, brand: it.brand, query: it.query, retail: it.retail }, rec.candidates || []);
+      return { item: it, verdict: j.verdict, reasons: j.reasons, price: j.price, mall: j.mall, link: j.link, productType: j.productType, qty: j.qty };
+    });
+
+    var counts = { 전체: resultsState.judged.length, 확정: 0, 확인필요: 0, 검색결과없음: 0 };
+    resultsState.judged.forEach(function (j) { counts[j.verdict] = (counts[j.verdict] || 0) + 1; });
+    var extra = resultsState.judged.filter(function (j) { return ['확정', '확인필요', '검색결과없음'].indexOf(j.verdict) === -1; });
+    summary.classList.add('show');
+    summary.innerHTML = '판정 완료 · 전체 <b>' + counts.전체 + '</b> · ' +
+      '<b style="color:var(--ok)">확정 ' + counts.확정 + '</b> · ' +
+      '<b style="color:var(--warn)">확인필요 ' + counts.확인필요 + '</b> · ' +
+      '<b style="color:var(--sub)">검색결과없음 ' + counts.검색결과없음 + '</b>' +
+      (extra.length ? ' · 기타(미조회/실패) ' + extra.length : '');
+
+    var tabDefs = [['전체', ''], ['확정', 'ok'], ['확인필요', 'warn'], ['검색결과없음', 'gray']];
+    if (extra.length) tabDefs.push(['기타', 'gray']);
+    if (['확정', '확인필요', '검색결과없음', '기타'].indexOf(resultsState.activeTab) !== -1 && !tabDefs.some(function (t) { return t[0] === resultsState.activeTab; })) resultsState.activeTab = '전체';
+    tabs.innerHTML = '';
+    tabDefs.forEach(function (t) {
+      var name = t[0], n = name === '기타' ? extra.length : counts[name];
+      var div = document.createElement('div');
+      div.className = 'tab ' + t[1] + (resultsState.activeTab === name ? ' active' : '');
+      div.innerHTML = name + '<span class="n">' + (n || 0) + '</span>';
+      div.dataset.tab = name;
+      div.addEventListener('click', function () { resultsState.activeTab = name; renderResultTable(); updateTabsActive(); });
+      tabs.appendChild(div);
+    });
+    renderResultTable();
+    $('next5').disabled = false;
+    unlock(6);
+  }
+
+  function updateTabsActive() {
+    document.querySelectorAll('#resultTabs .tab').forEach(function (el) { el.classList.toggle('active', el.dataset.tab === resultsState.activeTab); });
+  }
+
+  function renderResultTable() {
+    var body = $('resultBody'), tab = resultsState.activeTab;
+    var f = ($('rFilter').value || '').trim().toLowerCase();
+    var rows = resultsState.judged.filter(function (j) {
+      if (tab === '확정' || tab === '확인필요' || tab === '검색결과없음') { if (j.verdict !== tab) return false; }
+      else if (tab === '기타') { if (['확정', '확인필요', '검색결과없음'].indexOf(j.verdict) !== -1) return false; }
+      if (f && j.item.name.toLowerCase().indexOf(f) === -1 && (j.mall || '').toLowerCase().indexOf(f) === -1) return false;
+      return true;
+    });
+    var frag = document.createDocumentFragment();
+    rows.forEach(function (j, i) {
+      var tr = document.createElement('tr'); tr.className = 'v-' + j.verdict;
+      var link = j.link ? '<a class="lk" href="' + escapeAttr(j.link) + '" target="_blank" rel="noopener">링크 ↗</a>' : '';
+      tr.innerHTML =
+        '<td>' + (i + 1) + '</td>' +
+        '<td class="nm">' + escapeHtml(j.item.name) + '<div class="q">' + escapeHtml(j.item.query) + '</div></td>' +
+        '<td class="price">' + (j.price != null ? Number(j.price).toLocaleString('ko-KR') + '원' : '-') + '</td>' +
+        '<td>' + escapeHtml(j.mall || '-') + '</td>' +
+        '<td><span class="vbadge ' + j.verdict + '">' + j.verdict + '</span></td>' +
+        '<td><span class="reason">' + escapeHtml((j.reasons || []).join(' · ')) + '</span>' + (link ? ' ' + link : '') + '</td>';
+      frag.appendChild(tr);
+    });
+    body.innerHTML = ''; body.appendChild(frag);
+    $('resultCount').textContent = '표시 ' + rows.length + '건';
+  }
+
+  /* 판정 로직 내장 단위 테스트 (지시서 9-4) — 콘솔 검증. window.__NPS__.selfTest()로도 실행 가능 */
+  function runJudgeSelfTest() {
+    function C(title, lprice, pt) { return { title: title, lprice: String(lprice), mallName: 'M', link: 'x', productType: pt || '2', brand: '클리오' }; }
+    function I(name, retail) { return { name: name, brand: name.split(' ')[0], query: name, retail: retail == null ? '' : String(retail) }; }
+    var cases = [
+      ['원본 기획세트↔세트결과(카탈로그) → 확정', I('클리오 벨벳립펜슬 기획세트 007 피그브릭', 18000), [C('클리오 벨벳립펜슬 기획세트 007 피그브릭', 12000, '1')], '확정'],
+      ['원본 단품→결과 세트 → 검색결과없음', I('클리오 벨벳립펜슬 007 피그브릭'), [C('클리오 벨벳립펜슬 기획세트 007 피그브릭', 12000)], '검색결과없음'],
+      ['원본 세트→결과 단품 → 검색결과없음', I('클리오 벨벳립펜슬 기획세트 007 피그브릭'), [C('클리오 벨벳립펜슬 007 피그브릭', 12000)], '검색결과없음'],
+      ['용량 불일치 45ml↔100ml → 검색결과없음', { name: '더마토리 물광앰플 45ml', brand: '더마토리', query: '더마토리 물광앰플 45ml', retail: '35000' }, [C('더마토리 물광앰플 100ml', 20000)], '검색결과없음'],
+      ['색상 미포함 → 확인필요(옵션 불일치)', I('클리오 킬커버쿠션 21 라이트'), [C('클리오 킬커버쿠션 21', 15000)], '확인필요'],
+      ['카탈로그 없음+토큰100% → 확정', I('클리오 쉬폰블러틴트 010 코랄', 25600), [C('클리오 쉬폰블러틴트 010 코랄', 12600)], '확정'],
+      ['가격 이상치(미끼) → 확인필요', I('클리오 쉬폰블러틴트 010 코랄', 25600), [C('클리오 쉬폰블러틴트 010 코랄', 1000), C('클리오 쉬폰블러틴트 010 코랄 A', 12000), C('클리오 쉬폰블러틴트 010 코랄 B', 13000)], '확인필요'],
+      ['후보 0건 → 검색결과없음', I('클리오 뭔가 001 색'), [], '검색결과없음'],
+      ['오확정 방지: 010 코랄↔010 코랄베리 → 확인필요', I('클리오 틴트 010 코랄'), [C('클리오 틴트 010 코랄베리', 9000, '1')], '확인필요'],
+      ['오확정 방지: 라이트↔라이트베이지 → 확인필요', I('클리오 쿠션 21 라이트'), [C('클리오 쿠션 21 라이트베이지', 15000)], '확인필요'],
+      ['오확정 방지: 셰이드 5↔25 → 확인필요', { name: '롬앤 립스틱 5', brand: '롬앤', query: '롬앤 립스틱 5', retail: '' }, [C('롬앤 립스틱 25 베리', 9000, '1')], '확인필요'],
+      ['SPF50+·PA++++ 세트 오탈락 안 함 → 확정', { name: '라운드랩 선크림 50ml', brand: '라운드랩', query: '라운드랩 선크림 50ml', retail: '20000' }, [C('라운드랩 선크림 SPF50+ PA++++ 50ml', 15000, '1')], '확정'],
+    ];
+    var pass = 0, fail = 0;
+    console.log('%c[판정 로직 자체 테스트]', 'font-weight:bold');
+    cases.forEach(function (c) {
+      var r = JUDGE.judge(c[1], c[2]); var ok = r.verdict === c[3]; ok ? pass++ : fail++;
+      console.log((ok ? '✅' : '❌') + ' ' + c[0] + ' → ' + r.verdict + (ok ? '' : ' (기대 ' + c[3] + ')') + '  사유:[' + (r.reasons || []).join(' | ') + ']');
+    });
+    console.log('결과: ' + pass + ' 통과 / ' + fail + ' 실패');
+    return { pass: pass, fail: fail, total: cases.length };
+  }
+
   /* ═══ 초기화 ═══ */
   (function init() {
     if (isFile) $('fileWarn').classList.add('show');
@@ -1282,6 +1616,13 @@ if (typeof module !== 'undefined' && module.exports) { module.exports = { CONFIG
     $('next2').addEventListener('click', function () { goStep(3); });
     $('next3').addEventListener('click', function () { goStep(4); });
     $('next4').addEventListener('click', function () { goStep(5); });
+    $('next5').addEventListener('click', function () { goStep(6); });
+    $('rFilter').addEventListener('input', renderResultTable);
+    $('btnSelfTest').addEventListener('click', function () {
+      var r = runJudgeSelfTest();
+      var s = $('resultSummary'); s.classList.add('show');
+      s.innerHTML = '🧪 판정 로직 자체 테스트: <b>' + r.pass + '/' + r.total + ' 통과</b> ' + (r.fail ? '<span style="color:var(--danger)">(' + r.fail + ' 실패)</span>' : '✅') + ' <span class="hint">— 상세는 브라우저 콘솔(F12)</span>';
+    });
     // 실행 버튼
     $('btnStart').addEventListener('click', function () { runLoop().catch(function (e) { pushLog('error', '실행 실패: ' + (e && e.message ? e.message : e)); }); });
     $('btnPause').addEventListener('click', pauseResume);
@@ -1295,7 +1636,7 @@ if (typeof module !== 'undefined' && module.exports) { module.exports = { CONFIG
     document.querySelectorAll('[data-goto]').forEach(function (b) { b.addEventListener('click', function () { goStep(Number(b.dataset.goto)); }); });
     checkResumeOnLoad().catch(function (e) { console.warn('이어하기 확인 실패:', e && e.message ? e.message : e); });
     // 디버그/검증용 노출
-    window.__NPS__ = { state: state, PL: PL, CONFIG: CONFIG, engine: engine, IDB: IDB, runLoop: runLoop, enterRunStep: enterRunStep, buildQueueFromItems: buildQueueFromItems, fetchOne: fetchOne, distill: distill };
+    window.__NPS__ = { state: state, PL: PL, CONFIG: CONFIG, JUDGE: JUDGE, engine: engine, IDB: IDB, runLoop: runLoop, enterRunStep: enterRunStep, renderResults: renderResults, resultsState: resultsState, selfTest: runJudgeSelfTest, buildQueueFromItems: buildQueueFromItems, fetchOne: fetchOne, distill: distill };
   })();
 })();
 </script>
