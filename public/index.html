@@ -401,8 +401,30 @@
   <section class="step-page" data-step="6">
     <div class="panel">
       <h2>6. 다운로드</h2>
-      <div class="placeholder"><div class="big">🚧 Phase 5에서 구현됩니다</div>결과_원본형.xlsx · 결과_보고서형.xlsx</div>
-      <div class="actions"><button class="btn-ghost" data-goto="5">← 이전</button></div>
+      <p class="desc">판정 결과를 엑셀 2종으로 내려받습니다. 두 파일 모두 오른쪽에
+        <b>검색어·최저가·판매처·상품링크·판정·사유·감지용량·배송비(수동입력)·조회일시</b> 컬럼이 추가되고,
+        행 배경색으로 판정을 구분합니다(<span style="color:var(--ok)">확정</span>/<span style="color:var(--warn)">확인필요</span>/<span style="color:var(--sub)">검색결과없음</span>).
+        <span class="hint">배송비는 링크로 확인 후 직접 입력하는 빈 칸입니다.</span></p>
+
+      <div id="dlSummary" class="summary" style="background:var(--bg);border-color:var(--line)"></div>
+
+      <div class="grid row2" style="margin-top:4px">
+        <div class="panel" style="margin:0">
+          <h2 style="font-size:15px">① 결과_원본형.xlsx</h2>
+          <p class="desc" style="margin-bottom:12px">업로드한 원본의 <b>모든 행</b>(선택 브랜드, 재고 로트 중복 포함)을 그대로 두고 결과 컬럼을 추가.</p>
+          <button id="dlOriginal" class="btn-primary">⬇ 원본형 다운로드</button>
+        </div>
+        <div class="panel" style="margin:0">
+          <h2 style="font-size:15px">② 결과_보고서형.xlsx</h2>
+          <p class="desc" style="margin-bottom:12px">품명 단위로 병합(유통기한 임박·재고 합계·공급가 최솟값)하고 <b>카테고리별</b>로 정리한 보고 포맷.</p>
+          <button id="dlReport" class="btn-primary">⬇ 보고서형 다운로드</button>
+        </div>
+      </div>
+      <div id="dlStatus" class="status"></div>
+
+      <div class="actions">
+        <button class="btn-ghost" data-goto="5">← 이전</button>
+      </div>
     </div>
   </section>
 </div>
@@ -810,9 +832,40 @@ const JUDGE = (function () {
     return out;
   }
 
+  /* ── 보고서형 엑셀용 파생 필드 (지시서 7장) ── */
+  // 브랜드 접두만 제거 → '제품명+색상'
+  function stripBrand(name, brand) {
+    var s = PL.normalizeText(name), b = PL.normalizeText(brand);
+    if (b && s.indexOf(b) === 0) s = s.slice(b.length).trim();
+    return s;
+  }
+  // 수식어 토큰(괄호·옵션코드·세트키워드)인가 → 대표명 절단 지점
+  function isModifierToken(tok) {
+    if (/^[([]/.test(tok)) return true;
+    if (isOptionCode(tok)) return true;
+    for (var k = 0; k < CONFIG.SET_KEYWORDS.length; k++) { var kw = CONFIG.SET_KEYWORDS[k]; if (kw.length > 1 && tok.indexOf(kw) !== -1) return true; }
+    return false;
+  }
+  // 대표명 '세부' = 브랜드 제거 후 첫 수식어(세트/괄호/옵션/색상) 전까지
+  function repName(name, brand) {
+    var tokens = stripBrand(name, brand).split(/\s+/).filter(Boolean), out = [];
+    for (var i = 0; i < tokens.length; i++) { if (i > 0 && isModifierToken(tokens[i])) break; out.push(tokens[i]); }
+    return out.join(' ') || stripBrand(name, brand);
+  }
+  // 카테고리 자동분류 (CONFIG.CATEGORY_RULES 우선순위 순, 미매칭 기타)
+  function categorize(text) {
+    var t = PL.normalizeText(text);
+    for (var i = 0; i < CONFIG.CATEGORY_RULES.length; i++) {
+      var cat = CONFIG.CATEGORY_RULES[i][0], kws = CONFIG.CATEGORY_RULES[i][1];
+      for (var j = 0; j < kws.length; j++) if (t.indexOf(kws[j]) !== -1) return cat;
+    }
+    return CONFIG.DEFAULT_CATEGORY;
+  }
+
   return {
     judge: judge, evalCandidate: evalCandidate, setKeywordsOf: setKeywordsOf, qtyOf: qtyOf,
     queryTokens: queryTokens, requiredTokens: requiredTokens, tokenMatchRatio: tokenMatchRatio, isOptionCode: isOptionCode,
+    stripBrand: stripBrand, repName: repName, categorize: categorize,
   };
 })();
 /* ===LOGIC-BLOCK-END=== */
@@ -864,6 +917,7 @@ if (typeof module !== 'undefined' && module.exports) { module.exports = { CONFIG
     if (n === 3) buildPreview();
     if (n === 4) enterRunStep().catch(function (e) { $('progressText').textContent = '⚠️ ' + (e && e.message ? e.message : e); });
     if (n === 5) renderResults().catch(function (e) { $('resultSummary').classList.add('show'); $('resultSummary').innerHTML = '⚠️ ' + (e && e.message ? e.message : e); });
+    if (n === 6) renderDownloadStep().catch(function (e) { $('dlSummary').classList.add('show'); $('dlSummary').innerHTML = '⚠️ ' + (e && e.message ? e.message : e); });
     renderStepper();
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
@@ -1605,6 +1659,120 @@ if (typeof module !== 'undefined' && module.exports) { module.exports = { CONFIG
     return { pass: pass, fail: fail, total: cases.length };
   }
 
+  /* ═══════════════════════════════════════════════════════════════════
+   *  STEP 6 — 결과 엑셀 2종 생성 (ExcelJS)  (지시서 7장)
+   * ═══════════════════════════════════════════════════════════════════ */
+  var VERDICT_FILL = { '확정': 'FFE9F7EF', '확인필요': 'FFFEF7E0', '검색결과없음': 'FFF1F1F3' }; // 연녹/연노랑/연회색
+  var COMMON_HEADERS = ['검색어(실사용)', '최저가', '판매처', '상품링크', '판정', '사유', '감지용량', '배송비(수동입력)', '조회일시'];
+
+  function toInt(v) { var n = parseInt(String(v == null ? '' : v).replace(/[^0-9.]/g, ''), 10); return isNaN(n) ? null : n; }
+  function numOrText(v) { var s = String(v == null ? '' : v).trim(); return /^\d+$/.test(s) ? Number(s) : s; }
+  function imminentDate(arr) { var v = arr.map(toInt).filter(function (x) { return x != null && x !== 99991231; }); return v.length ? Math.min.apply(null, v) : ''; }
+
+  async function ensureJudged() { if (!(resultsState.judged && resultsState.judged.length)) await renderResults(); }
+  function judgedByName() { var m = Object.create(null); (resultsState.judged || []).forEach(function (j) { m[j.item.name] = j; }); return m; }
+  function selectedRows() { return state.allRows.filter(function (r) { return state.selectedBrands.has(r.brand); }); }
+
+  // 공통 컬럼 값 (조회일시 포함). 상품링크는 하이퍼링크 셀.
+  function commonCells(j, now) {
+    return [
+      (j && j.item ? j.item.query : '') || '',
+      (j && j.price != null) ? j.price : '',
+      (j && j.mall) || '',
+      (j && j.link) ? { text: '상품 링크', hyperlink: j.link } : '',
+      (j && j.verdict) || '',
+      (j && j.reasons) ? j.reasons.join(' · ') : '',
+      (j && j.qty) || '',
+      '',            // 배송비(수동입력) — 빈 칸
+      now,
+    ];
+  }
+  function paintRow(row, verdict) {
+    var argb = VERDICT_FILL[verdict]; if (!argb) return;
+    row.eachCell({ includeEmpty: true }, function (cell) { cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: argb } }; });
+  }
+  function styleLinkCell(cell) { if (cell && cell.value && cell.value.hyperlink) cell.font = { color: { argb: 'FF2563EB' }, underline: true }; }
+  function setWidths(ws, base) {
+    base.concat([26, 10, 14, 12, 10, 30, 10, 14, 20]).forEach(function (w, i) { ws.getColumn(i + 1).width = w; });
+  }
+  async function downloadWb(wb, filename) {
+    var buf = await wb.xlsx.writeBuffer();
+    var blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    var a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = filename;
+    document.body.appendChild(a); a.click();
+    setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 1500);
+  }
+
+  // ① 원본형: 선택 브랜드의 모든 행(로트 중복 포함) + 공통 컬럼
+  async function genOriginal() {
+    var jmap = judgedByName(), now = new Date().toLocaleString('ko-KR');
+    var wb = new ExcelJS.Workbook(), ws = wb.addWorksheet('결과_원본형');
+    ws.addRow(['브랜드', '품명', '제조일자', '유통기한', '재고수량', '소비자가', '공급가', '비고'].concat(COMMON_HEADERS));
+    ws.getRow(1).font = { bold: true };
+    selectedRows().forEach(function (r) {
+      var j = jmap[r.name];
+      var row = ws.addRow([r.brand, r.name, numOrText(r.mfgDate), numOrText(r.expDate), toInt(r.stock), toInt(r.retail), toInt(r.supply), r.note].concat(commonCells(j, now)));
+      if (j) paintRow(row, j.verdict);
+      styleLinkCell(row.getCell(12));
+    });
+    ws.views = [{ state: 'frozen', ySplit: 1 }];
+    setWidths(ws, [10, 40, 12, 12, 10, 12, 12, 14]);
+    await downloadWb(wb, '결과_원본형.xlsx');
+  }
+
+  // ② 보고서형: 품명 단위 병합 + 카테고리 정리 + 공통 컬럼
+  async function genReport() {
+    var jmap = judgedByName(), now = new Date().toLocaleString('ko-KR');
+    var groups = Object.create(null), order = [];
+    selectedRows().forEach(function (r) { if (!groups[r.name]) { groups[r.name] = { name: r.name, brand: r.brand, rows: [] }; order.push(r.name); } groups[r.name].rows.push(r); });
+    var items = order.map(function (name) {
+      var g = groups[name];
+      var pmColor = JUDGE.stripBrand(name, g.brand);
+      var supplies = g.rows.map(function (r) { return toInt(r.supply); }).filter(function (v) { return v != null; });
+      return {
+        cat: JUDGE.categorize(pmColor), sebu: JUDGE.repName(name, g.brand), pmColor: pmColor,
+        exp: imminentDate(g.rows.map(function (r) { return r.expDate; })),
+        stock: g.rows.reduce(function (s, r) { return s + (toInt(r.stock) || 0); }, 0),
+        supply: supplies.length ? Math.min.apply(null, supplies) : '',
+        j: jmap[name],
+      };
+    });
+    var catOrder = ['립', '립.치크', '아이', '아이브로우', '치크', '팩트', '하이라이터', '기타'];
+    function ci(c) { var i = catOrder.indexOf(c); return i < 0 ? catOrder.length : i; }
+    items.sort(function (a, b) { return ci(a.cat) - ci(b.cat) || (a.sebu < b.sebu ? -1 : a.sebu > b.sebu ? 1 : 0) || (a.pmColor < b.pmColor ? -1 : a.pmColor > b.pmColor ? 1 : 0); });
+
+    var wb = new ExcelJS.Workbook(), ws = wb.addWorksheet('결과_보고서형');
+    ws.addRow(['라이브방송 결과 보고 리스트']); ws.addRow([]);
+    ws.addRow(['카테고리', '세부', '제품명+색상', '유통기한', '재고수량', '공급가(vat+)'].concat(COMMON_HEADERS));
+    ws.getRow(3).font = { bold: true };
+    var curCat = null, curSebu = null, num = 0;
+    items.forEach(function (it) {
+      if (it.cat !== curCat) { curCat = it.cat; curSebu = null; ws.addRow([it.cat]); ws.getRow(ws.rowCount).font = { bold: true }; }
+      var no = ''; if (it.sebu !== curSebu) { curSebu = it.sebu; num++; no = num; }
+      var row = ws.addRow([no, it.sebu, it.pmColor, it.exp, it.stock, it.supply].concat(commonCells(it.j, now)));
+      if (it.j) paintRow(row, it.j.verdict);
+      styleLinkCell(row.getCell(10));
+    });
+    ws.views = [{ state: 'frozen', ySplit: 3 }];
+    setWidths(ws, [8, 22, 40, 12, 10, 12]);
+    await downloadWb(wb, '결과_보고서형.xlsx');
+  }
+
+  async function renderDownloadStep() {
+    try { await ensureJudged(); } catch (e) {}
+    var counts = { 확정: 0, 확인필요: 0, 검색결과없음: 0 }, etc = 0;
+    (resultsState.judged || []).forEach(function (j) { if (counts[j.verdict] != null) counts[j.verdict]++; else etc++; });
+    var sum = $('dlSummary'); sum.classList.add('show');
+    sum.innerHTML = '원본형 대상 행 <b>' + selectedRows().length + '</b> · 보고서형 품명 <b>' + (resultsState.judged || []).length + '</b> · ' +
+      '<b style="color:var(--ok)">확정 ' + counts.확정 + '</b> / <b style="color:var(--warn)">확인필요 ' + counts.확인필요 + '</b> / <b style="color:var(--sub)">검색결과없음 ' + counts.검색결과없음 + '</b>' + (etc ? ' / 기타 ' + etc : '');
+  }
+  async function doDownload(kind) {
+    var st = $('dlStatus');
+    setStatus(st, '<span class="spinner"></span>엑셀 생성 중…', 'info');
+    try { await (kind === 'report' ? genReport() : genOriginal()); setStatus(st, '✅ 다운로드가 시작되었습니다.', 'ok'); }
+    catch (e) { setStatus(st, '❌ 생성 실패: ' + (e && e.message ? e.message : e), 'error'); }
+  }
+
   /* ═══ 초기화 ═══ */
   (function init() {
     if (isFile) $('fileWarn').classList.add('show');
@@ -1618,6 +1786,8 @@ if (typeof module !== 'undefined' && module.exports) { module.exports = { CONFIG
     $('next4').addEventListener('click', function () { goStep(5); });
     $('next5').addEventListener('click', function () { goStep(6); });
     $('rFilter').addEventListener('input', renderResultTable);
+    $('dlOriginal').addEventListener('click', function () { doDownload('original'); });
+    $('dlReport').addEventListener('click', function () { doDownload('report'); });
     $('btnSelfTest').addEventListener('click', function () {
       var r = runJudgeSelfTest();
       var s = $('resultSummary'); s.classList.add('show');
@@ -1636,7 +1806,7 @@ if (typeof module !== 'undefined' && module.exports) { module.exports = { CONFIG
     document.querySelectorAll('[data-goto]').forEach(function (b) { b.addEventListener('click', function () { goStep(Number(b.dataset.goto)); }); });
     checkResumeOnLoad().catch(function (e) { console.warn('이어하기 확인 실패:', e && e.message ? e.message : e); });
     // 디버그/검증용 노출
-    window.__NPS__ = { state: state, PL: PL, CONFIG: CONFIG, JUDGE: JUDGE, engine: engine, IDB: IDB, runLoop: runLoop, enterRunStep: enterRunStep, renderResults: renderResults, resultsState: resultsState, selfTest: runJudgeSelfTest, buildQueueFromItems: buildQueueFromItems, fetchOne: fetchOne, distill: distill };
+    window.__NPS__ = { state: state, PL: PL, CONFIG: CONFIG, JUDGE: JUDGE, engine: engine, IDB: IDB, runLoop: runLoop, enterRunStep: enterRunStep, renderResults: renderResults, resultsState: resultsState, selfTest: runJudgeSelfTest, buildQueueFromItems: buildQueueFromItems, fetchOne: fetchOne, distill: distill, genOriginal: genOriginal, genReport: genReport, ensureJudged: ensureJudged };
   })();
 })();
 </script>
