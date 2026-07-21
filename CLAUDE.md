@@ -9,7 +9,8 @@
   git 작업(푸시/PR/머지) 승인은 **다음 Round 착수 승인이 아니다.**
 - **git 승인 게이트**: 로컬 커밋은 자유. **푸시·PR 생성·머지는 실행 직전 멈춰 사용자 승인**을 받는다(매번 per-action).
 - **브랜치 전략**: GitHub Flow. main + `feat/*` → PR → squash 머지. gh는 `limJaemin99` 인증됨.
-- 커밋 메시지·PR·README·UI·주석은 한국어.
+- **전면 한국어**: 커밋 메시지·PR·README·UI·주석뿐 아니라 **사고 과정(thinking)·진행 상태 메시지·사용자 응답까지 모든 서술을 한국어로 작성한다.**
+  고유명사·기술 용어(API·IndexedDB·productType·exclude·ExcelJS 등)와 코드/식별자만 원어를 허용한다. 영어 문장 서술 금지.
 
 ## 설계 철학 (v2 — 2026-07-21 전환)
 
