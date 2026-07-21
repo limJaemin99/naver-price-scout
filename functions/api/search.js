@@ -26,6 +26,7 @@ export async function onRequestGet(context) {
   const display = url.searchParams.get('display') || '10';
   const start = url.searchParams.get('start') || '1';
   const sort = url.searchParams.get('sort') || 'sim';
+  const exclude = url.searchParams.get('exclude') || ''; // used:rental[:cbshop] 등
 
   const clientId = context.request.headers.get('x-naver-client-id');
   const clientSecret = context.request.headers.get('x-naver-client-secret');
@@ -41,7 +42,8 @@ export async function onRequestGet(context) {
     + '?query=' + encodeURIComponent(query)
     + '&display=' + encodeURIComponent(display)
     + '&start=' + encodeURIComponent(start)
-    + '&sort=' + encodeURIComponent(sort);
+    + '&sort=' + encodeURIComponent(sort)
+    + (exclude ? '&exclude=' + encodeURIComponent(exclude) : '');
 
   try {
     const apiRes = await fetch(apiUrl, {

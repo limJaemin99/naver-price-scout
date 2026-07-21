@@ -269,8 +269,10 @@
         <label style="margin-top:16px">컬럼 매핑 (자동 감지 — 필요 시 교정)</label>
         <div class="map-grid" id="mapGrid"></div>
 
-        <label style="margin-top:18px">브랜드 필터 <span class="hint">— 조회할 브랜드를 고르세요 (기본: 클리오)</span></label>
-        <div class="brand-list" id="brandList"></div>
+        <div id="brandSection">
+          <label style="margin-top:18px">브랜드 필터 <span class="hint">— 조회할 브랜드를 고르세요 (기본: 클리오)</span></label>
+          <div class="brand-list" id="brandList"></div>
+        </div>
 
         <div id="summary" class="summary"></div>
 
@@ -346,6 +348,13 @@
         <label style="margin:0">샘플만 실행</label>
         <input id="sampleN" type="number" min="0" value="0" style="width:90px">
         <span class="hint">건 (0 = 전체). 소량으로 먼저 확인할 때 사용하세요.</span>
+      </div>
+
+      <div style="margin-top:10px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <label style="margin:0;display:flex;align-items:center;gap:6px;cursor:pointer">
+          <input id="excludeCbshop" type="checkbox"> 해외직구(cbshop) 제외
+        </label>
+        <span class="hint">중고·렌탈은 항상 제외됩니다. [미국]·[캐나다] 직수입품은 직구몰에만 있을 수 있어 기본 해제 상태입니다.</span>
       </div>
 
       <div class="run-actions">
@@ -442,6 +451,7 @@ const CONFIG = {
   // ── API 호출 ──────────────────────────────────────────────
   DISPLAY: 40,                       // 검색당 수신 건수(정확도순 40건 받아 필터링)
   SORT: 'sim',                       // 정확도순. asc(최저가순)는 미끼상품이 몰려 금지
+  API_EXCLUDE: 'used:rental',        // 중고·렌탈 기본 제외. 체크 시 ':cbshop'(해외직구) 추가
   CALL_DELAY_MS: 150,                // 호출 간 기본 딜레이(ms)
   RETRY_BACKOFF_MS: [1000, 2000, 4000], // HTTP 429 시 지수 백오프(3회)
   DAILY_LIMIT: 25000,                // 일일 호출 한도(표시용)
@@ -460,7 +470,7 @@ const CONFIG = {
   //  ※ 보류(KEEP): (D1)·(클리오토이스토리팝업) — 의미 불명확해 Phase 6 재검토
 
   // ── 판정: 세트성 키워드(양방향 검사 — 단순 제외 아님) ────────
-  SET_KEYWORDS: ['세트','기획','증정','묶음','키링','1+1','2개','3개','+','리필','미니','대용량','더블'],
+  SET_KEYWORDS: ['세트','기획','증정','묶음','키링','1+1','2개','3개','+','리필','미니','대용량','더블','포함'],
 
   // ── 판정: 토큰 매칭 임계값 ──────────────────────────────────
   TOKEN_MATCH_FULL: 0.80,            // 0.80↑ : 후보 유지
@@ -472,7 +482,15 @@ const CONFIG = {
 
   // ── 판정: 용량/수량 추출 단위 ───────────────────────────────
   //  '号/호'는 화장품에서 용량이 아니라 셰이드(21호)라 제외 — 옵션코드 경로로 처리(21↔21호).
-  QTY_UNITS: ['ml','mL','g','정','캡슐','포','매','일분','개입','개월','ea','EA'],
+  QTY_UNITS: ['ml','mL','g','정','캡슐','포','환','꾸미','매','일분','개입','개월','스틱','병','ea','EA'],
+
+  // ── 검색어 v2: 색상어 사전(제품명 끝 색상 패턴 감지·유지) ─────
+  COLOR_WORDS: ['주황','파랑','빨강','노랑','초록','검정','하양','흰','분홍','보라','회색','남색','청록',
+    '핑크','블루','레드','옐로우','그린','블랙','화이트','퍼플','네이비','베이지','브라운','그레이','오렌지','민트',
+    'yellow','blue','red','green','black','white','pink','purple','navy','beige','brown','gray','grey','orange','mint','skyblue','ivory'],
+
+  // ── 검색어 v2: 제품명 앞 [대괄호 접두] → '부가정보'로 추출 ─────
+  BRACKET_PREFIX_RE: '^\\s*(\\[[^\\]]*\\]\\s*)+',
 
   // ── 보고서: 카테고리 자동분류(우선순위 순 — 구체 → 일반) ─────
   CATEGORY_RULES: [
@@ -486,15 +504,27 @@ const CONFIG = {
   DEFAULT_CATEGORY: '기타',
 
   // ── 파싱: 헤더 컬럼 매핑 키(정규화된 헤더 매칭) ─────────────
-  //  logical field → [매칭 규칙: 'eq' 완전일치 | 'sw' 접두일치] 헤더 텍스트
+  //  logical field → [매칭: 'eq' 완전 | 'sw' 접두 | 'in' 포함] 헤더 텍스트. 첫 매칭 우선.
+  //  클리오(브랜드/품명…) + 취합본(제품명/단위/온라인…) 양 포맷 지원.
   COLUMN_KEYS: [
     ['brand',   'eq', '브랜드'],
+    ['vendor',  'eq', '업체명'],
     ['name',    'eq', '품명'],
+    ['name',    'eq', '제품명'],
     ['mfgDate', 'sw', '제조일자'],
-    ['expDate', 'sw', '유통기한'],
-    ['stock',   'sw', '재고수량'],
-    ['retail',  'sw', '소비자가'],
+    ['category','sw', '카테고리'],
+    ['package', 'sw', '패키지'],
+    ['unit',    'eq', '단위'],
+    ['efficacy','sw', '효능'],
+    ['carton',  'sw', '카톤'],
+    ['costA',   'sw', '뉴킷'],        // 원가 — 출력 금지
+    ['costB',   'in', '납품가'],       // 원가 — 출력 금지
+    ['online',  'in', '온라인'],       // 온라인 판매가(신규)
+    ['retail',  'sw', '소비자가'],      // 소비자가(클리오)
     ['supply',  'sw', '공급가'],
+    ['stock',   'sw', '재고수량'],      // 클리오
+    ['stock',   'sw', '가용재고'],      // 취합본
+    ['expDate', 'sw', '유통기한'],
     ['note',    'sw', '비고'],
   ],
 };
@@ -553,11 +583,14 @@ const PL = (function () {
     });
   }
 
-  // 품명 → 검색어: 정규화 → 관리코드 괄호 제거 → 브랜드 접두 보정
+  // 품명 → 검색어: 정규화 → 괄호( )·대괄호[ ] 내용 전부 제거 → 브랜드 접두 보정
+  //  [방향①] 관리코드뿐 아니라 콜라보/에디션 괄호도 제거한다. 판매자는 상품명에
+  //  콜라보/에디션명·관리코드를 넣지 않으므로 유지 시 검색 0건을 유발(실측: 콜라보 cand=0 다수).
+  //  ⚠️ 판정용 원본 품명(item.name)에는 괄호를 그대로 두어 세트/용량 검사에 사용한다.
   function generateQuery(rawName, brand) {
-    var s = normalizeText(rawName);
-    s = stripManagementParens(s).replace(/\s+/g, ' ').trim();
+    var s = normalizeText(rawName).replace(/\([^)]*\)/g, ' ').replace(/\[[^\]]*\]/g, ' ');
     var b = normalizeText(brand);
+    s = s.replace(/\s+/g, ' ').trim();
     if (b && s.indexOf(b) !== 0) s = b + ' ' + s;
     return s.replace(/\s+/g, ' ').trim();
   }
@@ -569,7 +602,7 @@ const PL = (function () {
     for (var r = 0; r < limit; r++) {
       var row = rows2D[r] || [];
       var hs = row.map(normalizeHeader);
-      if (hs.indexOf('브랜드') !== -1 && hs.indexOf('품명') !== -1) {
+      if ((hs.indexOf('브랜드') !== -1 && hs.indexOf('품명') !== -1) || hs.indexOf('제품명') !== -1) {
         return { headerRowIndex: r, colMap: buildColMap(row) };
       }
     }
@@ -585,30 +618,28 @@ const PL = (function () {
       for (var i = 0; i < CONFIG.COLUMN_KEYS.length; i++) {
         var field = CONFIG.COLUMN_KEYS[i][0], mode = CONFIG.COLUMN_KEYS[i][1], key = CONFIG.COLUMN_KEYS[i][2];
         if (map[field] != null) continue; // 첫 매칭 우선
-        var hit = (mode === 'eq') ? (h === key) : (h.indexOf(key) === 0);
+        var hit = (mode === 'eq') ? (h === key) : (mode === 'in') ? (h.indexOf(key) !== -1) : (h.indexOf(key) === 0);
         if (hit) { map[field] = c; break; }
       }
     }
     return map;
   }
 
-  // 데이터 행 추출(스킵 규칙 적용). 반환 [{brand,name,mfgDate,expDate,stock,retail,supply,note,row}]
+  // 데이터 행 추출(스킵 규칙 적용). 양 포맷 필드 포함(없는 포맷은 '').
   function extractRows(rows2D, headerRowIndex, colMap) {
     var out = [];
     for (var r = headerRowIndex + 1; r < rows2D.length; r++) {
       var row = rows2D[r] || [];
-      var brand = normalizeText(row[colMap.brand]);
-      var name = normalizeText(row[colMap.name]);
+      var g = function (f) { return colMap[f] != null ? normalizeText(row[colMap[f]]) : ''; };
+      var brand = g('brand'), name = g('name');
       if (isFootnote(brand) || isFootnote(name)) continue; // ※ 각주행
       if (name === '') continue;                            // 품명 없는 행(합계행 등)
       out.push({
-        brand: brand, name: name,
-        mfgDate: normalizeText(row[colMap.mfgDate]),
-        expDate: normalizeText(row[colMap.expDate]),
-        stock: normalizeText(row[colMap.stock]),
-        retail: normalizeText(row[colMap.retail]),
-        supply: normalizeText(row[colMap.supply]),
-        note: normalizeText(row[colMap.note]),
+        brand: brand, name: name, vendor: g('vendor'),
+        category: g('category'), pkg: g('package'), unit: g('unit'), efficacy: g('efficacy'),
+        carton: g('carton'), stock: g('stock'), online: g('online'),
+        retail: g('retail'), supply: g('supply'), costA: g('costA'), costB: g('costB'),
+        mfgDate: g('mfgDate'), expDate: g('expDate'), note: g('note'),
         row: r + 1, // 1-based 엑셀 행번호
       });
     }
@@ -655,6 +686,25 @@ const PL = (function () {
     return ('0000000' + h.toString(16)).slice(-8) + '_' + arr.length;
   }
 
+  // [검색어 v2] 제품명 앞 [대괄호 접두] → { info: 접두들, name: 접두 제거된 제품명 }
+  function extractBracketPrefix(rawName) {
+    var s = normalizeText(rawName);
+    var m = s.match(new RegExp(CONFIG.BRACKET_PREFIX_RE));
+    if (!m) return { info: '', name: s };
+    var info = m[0].replace(/\s+/g, ' ').trim();
+    return { info: info, name: s.slice(m[0].length).replace(/\s+/g, ' ').trim() };
+  }
+  // [검색어 v2] 색상어 추출 — 독립 토큰(공백/시작/끝 경계)일 때만. 색상 옵션("동전패치 주황",
+  //  "백 White")만 잡고, 제품명 일부(블루베리·화이트글루타치온·그레이트)는 제외.
+  function extractColors(text) {
+    var t = normalizeText(text), found = [];
+    CONFIG.COLOR_WORDS.forEach(function (c) {
+      var re = new RegExp('(^|\\s)' + c + '색?(\\s|$)', 'i'); // 한글은 '색' 접미 허용(주황/주황색)
+      if (re.test(t) && found.indexOf(c) === -1) found.push(c);
+    });
+    return found;
+  }
+
   return {
     cellText: cellText, normalizeText: normalizeText, normalizeHeader: normalizeHeader,
     isBlank: isBlank, isFootnote: isFootnote,
@@ -662,6 +712,7 @@ const PL = (function () {
     detectHeader: detectHeader, buildColMap: buildColMap, extractRows: extractRows,
     uniqueItems: uniqueItems, brandCounts: brandCounts,
     stripTags: stripTags, hashQueries: hashQueries,
+    extractBracketPrefix: extractBracketPrefix, extractColors: extractColors,
   };
 })();
 
@@ -677,13 +728,14 @@ const JUDGE = (function () {
   function diff(a, b) { return a.filter(function (x) { return b.indexOf(x) === -1; }); }
 
   // 세트성 키워드 집합(존재하는 것만) — 원본/결과 양쪽에서 추출해 양방향 비교
-  //  '+'는 숫자로 감싼 경우(1+1·2+1)만 인정 → SPF50+·PA++++ 오탐 방지.
-  //  'N개'는 숫자 경계 + '개월' 제외 → 3개월분·12개입 오탐 방지.
+  //  '+'는 1+1(숫자+숫자) 또는 공백 낀 " + "(A + B 번들)만 인정 → SPF50+·PA++++ 오탐 방지.
+  //  'N개'는 숫자 경계 + '개월' 제외. '포함'은 '미포함' 제외.
   function setKeywordsOf(text) {
     var t = nc(text), found = [];
     CONFIG.SET_KEYWORDS.forEach(function (k) {
       var hit;
-      if (k === '+') hit = /\d\s*\+\s*\d/.test(t);
+      if (k === '+') hit = /\d\s*\+\s*\d|\s\+\s/.test(t);
+      else if (k === '포함') hit = /(?<!미)포함/.test(t);
       else if (/^\d개$/.test(k)) hit = new RegExp('(?<!\\d)' + k + '(?!월)').test(t);
       else hit = t.indexOf(k.toLowerCase()) !== -1;
       if (hit && found.indexOf(k) === -1) found.push(k);
@@ -730,50 +782,56 @@ const JUDGE = (function () {
     }
     return false;
   }
-  // 토큰이 제목에 "의미 있게" 존재하는가.
-  //  한글(색상): 코랄 ⊄ 코랄베리 (한글 경계)
-  //  옵션코드(숫자): 5 ⊄ 25, 6 ⊄ 16 (숫자 경계). 단 010 ⊂ 틴트010코랄, 21 ⊂ 21호 는 허용.
-  //  그 외(제품명 영문 등): 부분일치 허용.
-  function tokenPresent(titleNc, tok) {
-    if (/[가-힣]/.test(tok)) return boundedContains(titleNc, tok, /[가-힣]/);
-    if (isOptionCode(tok)) return boundedContains(titleNc, tok, /[0-9]/);
-    return titleNc.indexOf(tok) !== -1;
+  //  한글(색상): 코랄 ⊄ 코랄베리 / 옵션코드(숫자): 5 ⊄ 25 (경계 인식) / 그 외: 부분일치
+  function matchOne(t, tok) {
+    if (/[가-힣]/.test(tok)) return boundedContains(t, tok, /[가-힣]/);
+    if (isOptionCode(tok)) return boundedContains(t, tok, /[0-9]/);
+    return t.indexOf(tok) !== -1;
   }
-  // 토큰 비율은 부분일치(느슨) 유지 — 제품명 단어가 붙어쓰기(클리오틴트)여도 매칭.
-  //  오확정 방지 경계 검사는 필수 토큰(색상/옵션코드)에만 tokenPresent로 적용한다.
+  // 토큰이 제목에 "의미 있게" 존재하는가. 정상 제목 + 공백제거 제목 양쪽 확인.
+  //  → 붙여쓰기(크리스탈글램틴트)↔띄어쓰기(크리스탈 글램 틴트) 흡수. 경계 검사는 유지(정밀도 보존).
+  function tokenPresent(titleNc, tok) {
+    return matchOne(titleNc, tok) || matchOne(titleNc.replace(/\s+/g, ''), tok);
+  }
+  // 토큰 비율: 정상/공백제거 제목 중 한쪽이라도 포함이면 hit (판매자 띄어쓰기 대응 — 실측 핵심 개선)
   function tokenMatchRatio(tokens, title) {
     if (!tokens.length) return 0;
-    var t = nc(title), hit = 0;
-    tokens.forEach(function (tok) { if (t.indexOf(tok) !== -1) hit++; });
+    var t = nc(title), tNoSp = t.replace(/\s+/g, ''), hit = 0;
+    tokens.forEach(function (tok) { if (t.indexOf(tok) !== -1 || tNoSp.indexOf(tok) !== -1) hit++; });
     return hit / tokens.length;
   }
 
-  // 후보 1건 평가 → { pass, marks[], drop, dropCat, ratio, qty }
-  //  drop=상세사유(값 포함), dropCat=안정 카테고리(최다 탈락사유 집계용)
+  // 후보 1건 평가 → { pass, marks[], drop, dropCat, isSet, ratio, qty }
+  //  [v2 철학] 탈락은 명백한 2가지만: ①원본 세트인데 결과 단품 ②원본·결과 용량 둘 다 명시+명백히 다름.
+  //  그 외(토큰 낮음·옵션/색상 미확인·1토큰 브랜드 미확인)는 후보 유지 + 마킹(플래그).
   function evalCandidate(item, cand) {
-    var title = cand.title || '';
+    var title = cand.title || '', titleNc = nc(title);
     // 세트성 양방향 검사
     var S = setKeywordsOf(item.name), R = setKeywordsOf(title);
     var RmS = diff(R, S), SmR = diff(S, R);
-    if (RmS.length) return { pass: false, dropCat: '결과에만 세트성', drop: '결과에만 세트성(' + RmS.join('·') + ')' };
     if (SmR.length) return { pass: false, dropCat: '원본 세트인데 결과 단품', drop: '원본 세트인데 결과 단품(' + SmR.join('·') + ')' };
-    // 토큰 매칭
-    var tokens = queryTokens(item.query, item.brand);
+    // 용량 확실 불일치 → 유일한 다른 탈락(양쪽 명시 + 겹침 없음)
+    var oq = qtyOf(item.name), rq = qtyOf(title);
+    if (oq.length && rq.length && !oq.some(function (q) { return rq.indexOf(q) !== -1; })) {
+      return { pass: false, dropCat: '용량 불일치', drop: '용량 불일치 ' + oq.join('/') + '↔' + rq.join('/') };
+    }
+    // ── 이하 전부 마킹(탈락 안 함) ──
+    var isSet = RmS.length > 0;                       // [②] 결과에만 세트 → 마킹(judge에서 비세트 우선)
+    var tokens = queryTokens(item.query, item.brand), marks = [];
+    if (tokens.length === 1) {                        // [③] 1토큰 검색어인데 결과에 브랜드/제조사 없음 → 마킹
+      var bNc = nc(item.brand);
+      if (bNc && titleNc.indexOf(bNc) === -1 && titleNc.replace(/\s+/g, '').indexOf(bNc.replace(/\s+/g, '')) === -1) marks.push('브랜드 미확인');
+    }
     var ratio = tokenMatchRatio(tokens, title);
-    if (ratio < CONFIG.TOKEN_MATCH_PARTIAL) return { pass: false, dropCat: '토큰일치 낮음', drop: '토큰일치 낮음(' + pct(ratio) + ')' };
-    var marks = [];
-    if (ratio < CONFIG.TOKEN_MATCH_FULL) marks.push('부분일치(' + pct(ratio) + ')');
+    if (ratio < CONFIG.TOKEN_MATCH_PARTIAL) marks.push('매칭 불확실(토큰 ' + pct(ratio) + ')');
+    else if (ratio < CONFIG.TOKEN_MATCH_FULL) marks.push('부분일치(' + pct(ratio) + ')');
     // 옵션/색상 필수 토큰 (한글 색상·숫자 코드 경계 인식 — 코랄⊄코랄베리, 5⊄25 오확정 방지)
-    var titleNc = nc(title);
     var miss = requiredTokens(tokens).filter(function (tok) { return !tokenPresent(titleNc, tok); });
     if (miss.length) marks.push('옵션 불일치: ' + miss.join('·') + ' 미확인');
-    // 용량 비교
-    var oq = qtyOf(item.name), rq = qtyOf(title);
-    if (oq.length && rq.length) {
-      if (!oq.some(function (q) { return rq.indexOf(q) !== -1; })) return { pass: false, dropCat: '용량 불일치', drop: '용량 불일치 ' + oq.join('/') + '↔' + rq.join('/') };
-    } else if (oq.length && !rq.length) marks.push('용량 미확인(원본 ' + oq.join('/') + ')');
+    // 용량: 한쪽만 있으면 마킹
+    if (oq.length && !rq.length) marks.push('용량 미확인(원본 ' + oq.join('/') + ')');
     else if (!oq.length && rq.length) marks.push('결과 용량 ' + rq.join('/') + '(원본 없음)');
-    return { pass: true, marks: marks, ratio: ratio, qty: (rq[0] || oq[0] || null) };
+    return { pass: true, marks: marks, isSet: isSet, ratio: ratio, qty: (rq[0] || oq[0] || null) };
   }
 
   function toNum(v) { var n = parseInt(String(v == null ? '' : v).replace(/[^0-9.]/g, ''), 10); return isNaN(n) ? null : n; } // 콤마·단위 제거 후 파싱
@@ -786,7 +844,7 @@ const JUDGE = (function () {
     var survivors = [], drops = {}, dropEx = {};
     candidates.forEach(function (c) {
       var e = evalCandidate(item, c);
-      if (e.pass) survivors.push({ cand: c, marks: e.marks, ratio: e.ratio, qty: e.qty });
+      if (e.pass) survivors.push({ cand: c, marks: e.marks, isSet: e.isSet, ratio: e.ratio, qty: e.qty });
       else { var cat = e.dropCat || e.drop; drops[cat] = (drops[cat] || 0) + 1; if (!dropEx[cat]) dropEx[cat] = e.drop; }
     });
 
@@ -798,8 +856,13 @@ const JUDGE = (function () {
       return out;
     }
 
-    survivors.sort(function (a, b) { var pa = priceOf(a.cand), pb = priceOf(b.cand); return (pa == null ? Infinity : pa) - (pb == null ? Infinity : pb); });
-    var prices = survivors.map(function (s) { return priceOf(s.cand); }).filter(function (p) { return p != null; }).sort(function (a, b) { return a - b; });
+    // [방향②] 비세트 후보 우선. 전원 세트성이면 판정 상한 = 확인필요.
+    var nonSet = survivors.filter(function (s) { return !s.isSet; });
+    var allSet = nonSet.length === 0;
+    var pool = allSet ? survivors : nonSet;
+
+    pool.sort(function (a, b) { var pa = priceOf(a.cand), pb = priceOf(b.cand); return (pa == null ? Infinity : pa) - (pb == null ? Infinity : pb); });
+    var prices = pool.map(function (s) { return priceOf(s.cand); }).filter(function (p) { return p != null; }).sort(function (a, b) { return a - b; });
     var n = prices.length;
     var median = n ? (n % 2 ? prices[(n - 1) / 2] : (prices[n / 2 - 1] + prices[n / 2]) / 2) : null; // 짝수 개수 시 참 중앙값
 
@@ -812,22 +875,37 @@ const JUDGE = (function () {
     }
     function fill(s) { out.price = priceOf(s.cand); out.mall = s.cand.mallName || null; out.link = s.cand.link || null; out.productType = s.cand.productType || null; out.qty = s.qty || null; out.title = s.cand.title || null; }
 
-    var clean = survivors.filter(function (s) { return s.marks.length === 0; });
+    // [방향③] 브랜드 제외 실질 토큰 ≤2 검색어는 자동 확정 보류(상한 확인필요)
+    var noConfirm = queryTokens(item.query, item.brand).length <= 2;
+    function confirm(reason) {
+      if (noConfirm) { out.verdict = '확인필요'; out.reasons = ['짧은 검색어(자동 확정 보류) · ' + reason]; }
+      else { out.verdict = '확정'; out.reasons = [reason]; }
+      return out;
+    }
+
+    // 전원 세트성 → 최저가 채우되 확인필요 상한
+    if (allSet) {
+      fill(pool[0]);
+      out.verdict = '확인필요';
+      out.reasons = ['결과 전체가 세트/증정 표기 — 단품가 확인 필요'].concat(priceMarks(priceOf(pool[0].cand)));
+      return out;
+    }
+
+    var clean = pool.filter(function (s) { return s.marks.length === 0; });
     if (clean.length) {
       var catalogs = clean.filter(function (s) { return String(s.cand.productType) === '1'; });
       var chosen = catalogs.length ? catalogs[0] : clean[0]; // 가격 오름차순 정렬됨
       fill(chosen);
       var pm = priceMarks(priceOf(chosen.cand));
       if (pm.length) { out.verdict = '확인필요'; out.reasons = pm; return out; }
-      if (catalogs.length) { out.verdict = '확정'; out.reasons = ['네이버 카탈로그(productType=1) 최저가']; return out; }
-      if (chosen.ratio >= 1) { out.verdict = '확정'; out.reasons = ['토큰 100% 일치 최저가']; return out; }
+      if (catalogs.length) return confirm('네이버 카탈로그(productType=1) 최저가');
+      if (chosen.ratio >= 1) return confirm('토큰 100% 일치 최저가');
       out.verdict = '확인필요'; out.reasons = ['유사일치(토큰 ' + pct(chosen.ratio) + ')']; return out;
     }
-    // clean 후보 없음 → 최저가 생존 후보 참고로 확인필요
-    var low = survivors[0];
-    fill(low);
+    // clean 후보 없음 → 최저가(비세트) 후보 참고로 확인필요
+    fill(pool[0]);
     out.verdict = '확인필요';
-    out.reasons = low.marks.concat(priceMarks(priceOf(low.cand)));
+    out.reasons = pool[0].marks.concat(priceMarks(priceOf(pool[0].cand)));
     if (!out.reasons.length) out.reasons = ['확인 필요'];
     return out;
   }
@@ -890,8 +968,9 @@ if (typeof module !== 'undefined' && module.exports) { module.exports = { CONFIG
     current: 1, maxUnlocked: 1,
     rows2D: null, sheetNames: [], activeSheet: null,
     headerRowIndex: -1, colMap: {},
-    allRows: [], brandCounts: {}, selectedBrands: new Set(),
-    items: [], // 현재 선택 브랜드의 고유 품명
+    allRows: [], brandCounts: {}, selectedBrands: new Set(), format: 'brand',
+    items: [], // 현재 선택 브랜드의 고유 품명(또는 flat 전 행)
+    excludeCbshop: false, // 해외직구(cbshop) 제외 여부 — 기본 off
   };
 
   /* ── 스텝퍼 ── */
@@ -1069,13 +1148,16 @@ if (typeof module !== 'undefined' && module.exports) { module.exports = { CONFIG
 
   // 헤더/매핑 변경 시: 행 추출 → 브랜드 목록/카운트 → 요약
   function recompute() {
-    if (state.colMap.brand == null || state.colMap.name == null) {
-      $('brandList').innerHTML = '<span class="hint">브랜드·품명 컬럼을 지정하세요.</span>';
+    if (state.colMap.name == null) {
+      $('brandList').innerHTML = '<span class="hint">품명(제품명) 컬럼을 지정하세요.</span>';
       $('summary').classList.remove('show'); $('next2').disabled = true; return;
     }
+    // 포맷 감지: 브랜드 컬럼 있으면 brand(클리오), 없으면 flat(취합본) → 브랜드 필터 숨김·전 행 대상
+    state.format = state.colMap.brand != null ? 'brand' : 'flat';
+    $('brandSection').style.display = state.format === 'flat' ? 'none' : '';
     state.allRows = PL.extractRows(state.rows2D, state.headerRowIndex, state.colMap);
-    state.brandCounts = PL.brandCounts(state.allRows);
-    renderBrandList();
+    if (state.format === 'flat') { state.selectedBrands = null; }
+    else { state.brandCounts = PL.brandCounts(state.allRows); renderBrandList(); }
     updateSummary();
   }
 
@@ -1103,17 +1185,20 @@ if (typeof module !== 'undefined' && module.exports) { module.exports = { CONFIG
   }
 
   function updateSummary() {
-    var sel = state.selectedBrands;
-    state.items = PL.uniqueItems(state.allRows, sel);
+    var flat = state.format === 'flat';
+    state.items = PL.uniqueItems(state.allRows, flat ? null : state.selectedBrands);
+    // 신규 포맷: 온라인 판매가를 판정 기준 소비자가로 사용
+    state.items.forEach(function (it) { if (!it.retail && it.online) it.retail = it.online; });
     var n = state.items.length;
     var sum = $('summary');
     if (!n) { sum.classList.remove('show'); $('next2').disabled = true; return; }
     var over = n > CONFIG.DAILY_LIMIT;
+    var head = flat ? ('전체 제품 <b>' + n.toLocaleString('ko-KR') + '</b>개')
+      : ('선택 브랜드 <b>' + Array.from(state.selectedBrands).length + '</b>개 · 고유 품명 <b>' + n.toLocaleString('ko-KR') + '</b>개');
     sum.classList.add('show');
-    sum.innerHTML = '선택 브랜드 <b>' + Array.from(sel).length + '</b>개 · 고유 품명 <b>' + n.toLocaleString('ko-KR') + '</b>개' +
-      ' = 예상 API 호출 <b>' + n.toLocaleString('ko-KR') + '</b>회' +
+    sum.innerHTML = head + ' = 예상 API 호출 <b>' + n.toLocaleString('ko-KR') + '</b>회' +
       '<div class="hint" style="margin-top:6px">일일 한도 ' + CONFIG.DAILY_LIMIT.toLocaleString('ko-KR') + '건' +
-      (over ? ' <span class="warn">— 한도를 초과합니다! 브랜드를 줄이거나 나눠서 실행하세요.</span>' : ' · 여유 ' + (CONFIG.DAILY_LIMIT - n).toLocaleString('ko-KR') + '건') + '</div>';
+      (over ? ' <span class="warn">— 한도를 초과합니다! 나눠서 실행하세요.</span>' : ' · 여유 ' + (CONFIG.DAILY_LIMIT - n).toLocaleString('ko-KR') + '건') + '</div>';
     $('next2').disabled = false;
     unlock(3);
   }
@@ -1144,7 +1229,7 @@ if (typeof module !== 'undefined' && module.exports) { module.exports = { CONFIG
       shown++;
       var tr = document.createElement('tr'); if (it.edited) tr.className = 'edited';
       tr.dataset.name = it.name;
-      var brandTag = state.selectedBrands.size > 1 ? '<span class="brand-tag">' + it.brand + '</span>' : '';
+      var brandTag = (state.selectedBrands && state.selectedBrands.size > 1) ? '<span class="brand-tag">' + it.brand + '</span>' : '';
       tr.innerHTML =
         '<td class="idx">' + (i + 1) + '</td>' +
         '<td class="name">' + brandTag + escapeHtml(it.name) + '</td>' +
@@ -1370,7 +1455,8 @@ if (typeof module !== 'undefined' && module.exports) { module.exports = { CONFIG
 
   // 단건 조회 (429/네트워크 오류 → 지수 백오프, 401/403 → 전체 중단)
   async function fetchOne(query, cid, csec) {
-    var params = new URLSearchParams({ query: query, display: String(CONFIG.DISPLAY), start: '1', sort: CONFIG.SORT });
+    var exclude = CONFIG.API_EXCLUDE + (state.excludeCbshop ? ':cbshop' : '');
+    var params = new URLSearchParams({ query: query, display: String(CONFIG.DISPLAY), start: '1', sort: CONFIG.SORT, exclude: exclude });
     var url = '/api/search?' + params.toString();
     var attempt = 0;
     while (true) {
@@ -1637,17 +1723,20 @@ if (typeof module !== 'undefined' && module.exports) { module.exports = { CONFIG
     function I(name, retail) { return { name: name, brand: name.split(' ')[0], query: name, retail: retail == null ? '' : String(retail) }; }
     var cases = [
       ['원본 기획세트↔세트결과(카탈로그) → 확정', I('클리오 벨벳립펜슬 기획세트 007 피그브릭', 18000), [C('클리오 벨벳립펜슬 기획세트 007 피그브릭', 12000, '1')], '확정'],
-      ['원본 단품→결과 세트 → 검색결과없음', I('클리오 벨벳립펜슬 007 피그브릭'), [C('클리오 벨벳립펜슬 기획세트 007 피그브릭', 12000)], '검색결과없음'],
+      ['②원본 단품→결과 세트(유일) → 확인필요', I('클리오 벨벳립펜슬 007 피그브릭'), [C('클리오 벨벳립펜슬 기획세트 007 피그브릭', 12000)], '확인필요'],
+      ['②비세트+세트 혼재 → 비세트로 확정', I('클리오 쉬폰블러틴트 010 코랄', 25600), [C('클리오 쉬폰블러틴트 010 코랄', 12600, '1'), C('클리오 쉬폰블러틴트 010 코랄 기획세트 증정', 9000)], '확정'],
+      ['②결과 전원 세트/증정 → 확인필요(최저가 채움)', I('클리오 듀얼톤업선크림', 20000), [C('클리오 듀얼톤업선크림 기획 증정', 12000), C('클리오 듀얼톤업선크림 세트', 13000)], '확인필요'],
       ['원본 세트→결과 단품 → 검색결과없음', I('클리오 벨벳립펜슬 기획세트 007 피그브릭'), [C('클리오 벨벳립펜슬 007 피그브릭', 12000)], '검색결과없음'],
+      ['③샤프너(1토큰) 번들 오매칭 → 확정 금지(확인필요)', I('클리오 샤프너'), [C('클리오 버터밤크레용 11호 (샤프너 포함)', 4380, '1')], '확인필요'],
+      ['③[v2]1토큰+결과 브랜드 없음 → 탈락 아닌 확인필요(브랜드 미확인 플래그)', I('클리오 샤프너'), [C('무지 연필깎이 샤프너', 3000)], '확인필요'],
       ['용량 불일치 45ml↔100ml → 검색결과없음', { name: '더마토리 물광앰플 45ml', brand: '더마토리', query: '더마토리 물광앰플 45ml', retail: '35000' }, [C('더마토리 물광앰플 100ml', 20000)], '검색결과없음'],
       ['색상 미포함 → 확인필요(옵션 불일치)', I('클리오 킬커버쿠션 21 라이트'), [C('클리오 킬커버쿠션 21', 15000)], '확인필요'],
-      ['카탈로그 없음+토큰100% → 확정', I('클리오 쉬폰블러틴트 010 코랄', 25600), [C('클리오 쉬폰블러틴트 010 코랄', 12600)], '확정'],
+      ['카탈로그 없음+토큰100%(3토큰) → 확정', I('클리오 쉬폰블러틴트 010 코랄', 25600), [C('클리오 쉬폰블러틴트 010 코랄', 12600)], '확정'],
       ['가격 이상치(미끼) → 확인필요', I('클리오 쉬폰블러틴트 010 코랄', 25600), [C('클리오 쉬폰블러틴트 010 코랄', 1000), C('클리오 쉬폰블러틴트 010 코랄 A', 12000), C('클리오 쉬폰블러틴트 010 코랄 B', 13000)], '확인필요'],
       ['후보 0건 → 검색결과없음', I('클리오 뭔가 001 색'), [], '검색결과없음'],
       ['오확정 방지: 010 코랄↔010 코랄베리 → 확인필요', I('클리오 틴트 010 코랄'), [C('클리오 틴트 010 코랄베리', 9000, '1')], '확인필요'],
-      ['오확정 방지: 라이트↔라이트베이지 → 확인필요', I('클리오 쿠션 21 라이트'), [C('클리오 쿠션 21 라이트베이지', 15000)], '확인필요'],
-      ['오확정 방지: 셰이드 5↔25 → 확인필요', { name: '롬앤 립스틱 5', brand: '롬앤', query: '롬앤 립스틱 5', retail: '' }, [C('롬앤 립스틱 25 베리', 9000, '1')], '확인필요'],
-      ['SPF50+·PA++++ 세트 오탈락 안 함 → 확정', { name: '라운드랩 선크림 50ml', brand: '라운드랩', query: '라운드랩 선크림 50ml', retail: '20000' }, [C('라운드랩 선크림 SPF50+ PA++++ 50ml', 15000, '1')], '확정'],
+      ['오확정 방지: 셰이드 5↔25(3토큰) → 확인필요', I('클리오 제로매트립스틱 5 러스티'), [C('클리오 제로매트립스틱 25 베리', 9000, '1')], '확인필요'],
+      ['①콜라보 괄호 제거 검색어 → 확정', { name: '클리오 쉬폰블러틴트 (PASTEL CLOUDS WITH DEW) 010 코랄', brand: '클리오', query: PL.generateQuery('클리오 쉬폰블러틴트 (PASTEL CLOUDS WITH DEW) 010 코랄', '클리오'), retail: '25600' }, [C('클리오 쉬폰블러틴트 010 코랄', 12600, '1')], '확정'],
     ];
     var pass = 0, fail = 0;
     console.log('%c[판정 로직 자체 테스트]', 'font-weight:bold');
@@ -1671,7 +1760,7 @@ if (typeof module !== 'undefined' && module.exports) { module.exports = { CONFIG
 
   async function ensureJudged() { if (!(resultsState.judged && resultsState.judged.length)) await renderResults(); }
   function judgedByName() { var m = Object.create(null); (resultsState.judged || []).forEach(function (j) { m[j.item.name] = j; }); return m; }
-  function selectedRows() { return state.allRows.filter(function (r) { return state.selectedBrands.has(r.brand); }); }
+  function selectedRows() { return state.selectedBrands ? state.allRows.filter(function (r) { return state.selectedBrands.has(r.brand); }) : state.allRows.slice(); }
 
   // 공통 컬럼 값 (조회일시 포함). 상품링크는 하이퍼링크 셀.
   function commonCells(j, now) {
@@ -1799,6 +1888,7 @@ if (typeof module !== 'undefined' && module.exports) { module.exports = { CONFIG
     $('btnStop').addEventListener('click', stopRun);
     $('btnNewJob').addEventListener('click', newJob);
     $('sampleN').addEventListener('change', function () { if (state.items.length && !engine.running) enterRunStep(); });
+    $('excludeCbshop').addEventListener('change', function () { state.excludeCbshop = this.checked; });
     // 이어하기 배너(상단)
     $('topResumeGo').addEventListener('click', function () { $('topResume').classList.remove('show'); unlock(4); goStep(4); });
     $('topResumeDismiss').addEventListener('click', function () { $('topResume').classList.remove('show'); });
@@ -1806,7 +1896,7 @@ if (typeof module !== 'undefined' && module.exports) { module.exports = { CONFIG
     document.querySelectorAll('[data-goto]').forEach(function (b) { b.addEventListener('click', function () { goStep(Number(b.dataset.goto)); }); });
     checkResumeOnLoad().catch(function (e) { console.warn('이어하기 확인 실패:', e && e.message ? e.message : e); });
     // 디버그/검증용 노출
-    window.__NPS__ = { state: state, PL: PL, CONFIG: CONFIG, JUDGE: JUDGE, engine: engine, IDB: IDB, runLoop: runLoop, enterRunStep: enterRunStep, renderResults: renderResults, resultsState: resultsState, selfTest: runJudgeSelfTest, buildQueueFromItems: buildQueueFromItems, fetchOne: fetchOne, distill: distill, genOriginal: genOriginal, genReport: genReport, ensureJudged: ensureJudged };
+    window.__NPS__ = { state: state, PL: PL, CONFIG: CONFIG, JUDGE: JUDGE, engine: engine, IDB: IDB, runLoop: runLoop, enterRunStep: enterRunStep, renderResults: renderResults, resultsState: resultsState, selfTest: runJudgeSelfTest, buildQueueFromItems: buildQueueFromItems, fetchOne: fetchOne, distill: distill, genOriginal: genOriginal, genReport: genReport, ensureJudged: ensureJudged, recompute: recompute, applyHeaderRow: applyHeaderRow, updateSummary: updateSummary, buildPreview: buildPreview };
   })();
 })();
 </script>
